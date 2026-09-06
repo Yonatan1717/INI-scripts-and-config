@@ -1,0 +1,8 @@
+template(name="CiscoPerHost" type="string"sudo cat /etc/rsyslog.d/30-cisco.conf  
+        string="/var/log/cisco/%HOSTNAME%.log")
+
+
+if ($inputname == "imudp") then {
+    action(type="omfile" dynaFile="CiscoPerHost")
+    stop
+}
