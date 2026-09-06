@@ -717,6 +717,7 @@ def set_up_DHCP_for_vrf_lans(ip_data):
             f"vrf {vrf}",
             f"network {network} {mask}",
             f"default-router {ip_gw}",
+            "dns-server 8.8.8.8 1.1.1.1" if vrf == "INET" else "!",
             "exit"
         ]
 
