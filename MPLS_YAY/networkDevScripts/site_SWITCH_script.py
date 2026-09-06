@@ -9,6 +9,8 @@ import ipaddress
 SSH_DOMAIN = "lab.local"
 have_asked_rsyslog_server = False
 have_asked_tacacs_server = False
+isp_added = False
+isp_added2 = False
 
 def read_sheet(filename, sheet):
     df = pd.read_excel(
@@ -55,7 +57,7 @@ def read_sheet(filename, sheet):
     
     swi_data_start = md_swi_end + 1
 
-    swi_data = df.iloc[swi_data_start:, 0:9]
+    swi_data = df.iloc[swi_data_start:, 0:10]
 
     swi_data.columns = swi_data.iloc[0]
     swi_data = swi_data[1:].reset_index(drop=True)
@@ -209,6 +211,7 @@ def global_config(md,md_top, swi_data):
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}0"] = [
             f"description Management interface for VLAN {mgmt_vlan}",
+            "ip arp inspection trust",
             "switchport mode access",
             f"switchport access vlan {mgmt_vlan}",
             "switchport port-security",
@@ -227,7 +230,7 @@ def global_config(md,md_top, swi_data):
     return info
 
 
-def config_vlan(swi_data, site):
+def config_vlan(swi_data, site, md):
     info = {} 
     info["config"] = {}
     info["network_info"] = {}
@@ -245,6 +248,14 @@ def config_vlan(swi_data, site):
 
         intf_prefix = row["intf_prefix"]
 
+        global isp_added2
+
+        if not isp_added2:
+            isp_vlan = md.iloc[0]["ISP-VLAN"]
+            isp_added2 = True
+        else:
+            isp_vlan = "hello"
+
         if f"SW{sw_id}-SITE-{site}" not in info["config"]:
             info["config"][f"SW{sw_id}-SITE-{site}"] = {}
 
@@ -255,6 +266,8 @@ def config_vlan(swi_data, site):
 
         made = 0
         for vlan, antall in vlan_info:
+            if antall <= 0:
+                continue
             info["config"][f"SW{sw_id}-SITE-{site}"][f"vlan {vlan}"] = [
                 f"name VLAN_{vlan}",
                 "exit"
@@ -265,6 +278,8 @@ def config_vlan(swi_data, site):
 
             info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {range_or_not}{intf_prefix}{rng}"] = [
                 f"description access port for VLAN {vlan}",
+                "ip dhcp snooping trust" if vlan == isp_vlan else "!",
+                "ip arp inspection trust" if vlan == isp_vlan else "!",
                 "switchport mode access",
                 f"switchport access vlan {vlan}",
                 "switchport port-security",
@@ -301,6 +316,8 @@ def config_trunk_and_dchp_snooping(swi_data, site, md):
             antall = int(vlan_count.split(".")[1])
             tot_antall_port = antall
 
+        
+
        
         if mgmg_vlan not in vlans:
             vlans.insert(0, mgmg_vlan)
@@ -313,18 +330,26 @@ def config_trunk_and_dchp_snooping(swi_data, site, md):
         if f"SW{sw_id}-SITE-{site}" not in info["config"]:
             info["config"][f"SW{sw_id}-SITE-{site}"] = {}
 
-        to_lan = num_ports - 1
-        to_core = num_ports - 2
+        to_lan = num_ports - 2
+        to_core = num_ports - 1
         
         vlans.append(999)
-        try:
-            isp_vlan = md.iloc[0]["ISP-VLAN"]
-            if type(isp_vlan) is not int:
-                isp_vlan = int(isp_vlan)
+        
+        global isp_added
+        
+        if not isp_added:
+            try:
+                isp_vlan = md.iloc[0]["ISP-VLAN"]
+                if type(isp_vlan) is not int:
+                    isp_vlan = int(isp_vlan)
+                vlans_for_dhcp_snooping = [vlan for vlan in vlans if vlan != isp_vlan]
+            except Exception as e:
+                vlans_for_dhcp_snooping = vlans
 
-            vlans_for_dhcp_snooping = [vlan for vlan in vlans if vlan != isp_vlan]
-        except Exception as e:
+            isp_added = True
+        else:
             vlans_for_dhcp_snooping = vlans
+
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping"] = []
         info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping vlan {','.join(map(str, vlans_for_dhcp_snooping))}"] = []
@@ -343,21 +368,26 @@ def config_trunk_and_dchp_snooping(swi_data, site, md):
             "exit"
         ]
 
-
-        info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_lan}"] = [
-            f"description downlink trunk port for VLAN {','.join(map(str, vlans_for_dhcp_snooping))} om ikke brukt skal det brukes shutdown på porten",
-            "switchport trunk encapsulation dot1q",
-            "switchport trunk native vlan 999",
-            "switchport mode trunk",
-            f"switchport trunk allowed vlan {','.join(map(str, vlans_for_dhcp_snooping))}",
-            "no shutdown",
-            "exit"
-        ]
+        num_down_ports = row["num_downlink"]
+        # print(type(num_down_ports))
+        # exit()
+        for i in range(num_down_ports):
+            info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_lan - i}"] = [
+                f"description downlink trunk port for VLAN {','.join(map(str, vlans))}. OM ikke brukt skal det brukes shutdown på porten",
+                "switchport trunk encapsulation dot1q",
+                "switchport trunk native vlan 999",
+                "switchport mode trunk",
+                f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
+                f"ip dhcp snooping trust",
+                f"ip arp inspection trust",
+                "no shutdown",
+                "exit"
+            ]
     
-        ports_left = num_ports - tot_antall_port - 3
+        ports_left = num_ports - tot_antall_port - 2 - num_down_ports
         if ports_left > 0:
             start_int = tot_antall_port + 1
-            end_int = num_ports - 3
+            end_int = num_ports - 2 - num_down_ports
             range_or_not = "range " if start_int != end_int else ""
 
             rng = f"{start_int}-{end_int}" if start_int != end_int else f"{start_int}"
@@ -410,7 +440,7 @@ def create_site_sw_config(file, sheet, config_file):
     data[f"site {sn}"] = {}
     data[f"site {sn}"]["config"] = {}
 
-    vlan_conf = config_vlan(swi_data, sn)
+    vlan_conf = config_vlan(swi_data, sn, md)
     data = update_site_config(data, swi_data, sn, vlan_conf)
 
     global_conf = global_config(md, md_top, swi_data)

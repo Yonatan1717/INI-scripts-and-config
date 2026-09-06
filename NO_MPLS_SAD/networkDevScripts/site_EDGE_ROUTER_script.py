@@ -18,7 +18,7 @@ def read_sheet(filename, sheet):
 
     md_start = 0
     md_end = df.iloc[md_start:].isna().all(axis=1).idxmax()
-    md = df.iloc[md_start:md_end, 0:8]
+    md = df.iloc[md_start:md_end, 0:9]
     md.columns = md.iloc[0]
     md = md[1:].reset_index(drop=True)
 
@@ -462,7 +462,7 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
 
         if is_hub:
             if vrf == "INET":
-                tun_vrf_s.append("redistribute static metric 100000 10 255 1 1500")
+                tun_vrf_s.append({"topology base": ["redistribute static metric 100000 10 255 1 1500", "exit-af-topology"]})
 
         tun_vrf_s.append("exit-address-family")
         tun_s[
@@ -661,7 +661,7 @@ def fetch_site_data(config_file, site_number):
     return data, hub == f"site {site_number}"
 
 
-def create_global_config(md, router_id, intf_prefix, sn):
+def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     my_data = {}
     my_data["config"] = {}
     my_data["network_info"] = {}
@@ -684,12 +684,40 @@ def create_global_config(md, router_id, intf_prefix, sn):
     my_data["config"]["router ospf 1"] = ospf_s
 
 
-    intf_s = []
-    intf_s.append("ip address dhcp")
-    intf_s.append("ip ospf 1 area 0")
-    intf_s.append("no shutdown")
-    intf_s.append("exit")
-    my_data["config"][f"interface {intf_prefix}1"] = intf_s
+    dhcp = md.iloc[0].get("DHCP", False)
+    dhcp_config = {}
+    if is_hub and dhcp:
+        dhcp_config = {
+            "ip dhcp excluded-address 10.0.0.1 10.0.0.10": [],
+            "ip dhcp pool CORE": [
+                "network 10.0.0.0 255.255.255.0",
+                "default-router 10.0.0.1",
+                "exit"
+            ]
+        }
+        
+        intf_s = {
+            f"interface {intf_prefix}1": [
+                "ip address 10.0.0.1 255.255.255.0",
+                "ip ospf 1 area 0",
+                "no shutdown",
+                "exit"
+            ]
+        }
+        
+        for key, value in dhcp_config.items():
+            my_data["config"][key] = value
+        for key, value in intf_s.items():
+            my_data["config"][key] = value
+    else:
+        intf_s = []
+        intf_s.append("ip address dhcp")
+        intf_s.append("ip ospf 1 area 0")
+        intf_s.append("no shutdown")
+        intf_s.append("exit")
+        my_data["config"][f"interface {intf_prefix}1"] = intf_s
+    
+
 
     my_data["network_info"]["loopback0"] = {
         "address": router_id,
@@ -807,7 +835,7 @@ def configure_site(sheet_file, config_file, sheet):
     
     
     #OPPRETT GLOBAL KONFIGURASJON
-    my_data = create_global_config(md,router_id, intf_prefix, sn)
+    my_data = create_global_config(md,router_id, intf_prefix, sn, is_hub)
 
     #NTP
     d_ntp = config_ntp(data, is_hub)
@@ -907,7 +935,6 @@ def create_or_update_config_files(data):
             encoding="utf-8"
         ) as f:
             f.write("\n".join(text))
-            
     
     print()
     print(f"Text versjon av config for edge router i site {site} er fullført og lagret i siteEdgeRouterTextConfigs/EDGE_ROUTER_{site.replace(' ', '_').upper()}.txt")

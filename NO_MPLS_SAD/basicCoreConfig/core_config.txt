@@ -33,15 +33,12 @@ mpls ldp router-id loop0 force
 interface g0/0
  ip address 9.9.9.1 255.255.255.252
  ip ospf 1 area 0
- mpls ip
  no sh
 interface g0/1
  ip address 11.11.11.1 255.255.255.252
  ip ospf 1 area 0
- mpls ip
  no sh
 interface g0/2
  ip address 12.12.12.1 255.255.255.252
  ip ospf 1 area 0
- mpls ip
  no sh

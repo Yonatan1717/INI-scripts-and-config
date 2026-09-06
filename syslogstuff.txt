@@ -1,4 +1,4 @@
-template(name="CiscoPerHost" type="string"sudo cat /etc/rsyslog.d/30-cisco.conf  
+template(name="CiscoPerHost" type="string"
         string="/var/log/cisco/%HOSTNAME%.log")
 
 
