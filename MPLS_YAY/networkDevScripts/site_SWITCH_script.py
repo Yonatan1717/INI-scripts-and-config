@@ -7,6 +7,8 @@ from openpyxl import load_workbook
 import ipaddress
 
 SSH_DOMAIN = "lab.local"
+have_asked_rsyslog_server = False
+have_asked_tacacs_server = False
 
 def read_sheet(filename, sheet):
     df = pd.read_excel(
@@ -15,33 +17,112 @@ def read_sheet(filename, sheet):
         header=None
     )
 
-    md_start = 17
-
+    md_start = 0
     md_end = df.iloc[md_start:].isna().all(axis=1).idxmax()
-
-    md = df.iloc[md_start:md_end, 0:5]
+    md = df.iloc[md_start:md_end, 0:8]
     md.columns = md.iloc[0]
     md = md[1:].reset_index(drop=True)
 
-    swi_start = md_end + 1
-    blank = df.iloc[swi_start:].isna().all(axis=1)
-    if blank.any():
-        swi_end = blank.idxmax()
-    else:
-        swi_end = len(df)
+    ip_data_start = md_end + 1
+    blank = df.iloc[ip_data_start:].isna().all(axis=1)
+    ip_data_end = blank.idxmax()
+    ip_data = df.iloc[ip_data_start:ip_data_end, 0:11]
+    ip_data.columns = ip_data.iloc[0]
+    ip_data = ip_data[1:].reset_index(drop=True)
 
-    swi_data = df.iloc[swi_start:swi_end, 0:9]
+
+    vrf_data_start = ip_data_end + 1
+    blank = df.iloc[vrf_data_start:].isna().all(axis=1)
+    vrf_data_end = blank.idxmax()
+    vrf_data = df.iloc[vrf_data_start:vrf_data_end, 0:4]
+    vrf_data.columns = vrf_data.iloc[0]
+    vrf_data = vrf_data[1:].reset_index(drop=True)
+    
+    tunnel_data_start = vrf_data_end + 1
+    blank = df.iloc[tunnel_data_start:].isna().all(axis=1)
+    tunnel_data_end = blank.idxmax()
+    tunnel_data = df.iloc[tunnel_data_start:tunnel_data_end, 0:10]
+    tunnel_data.columns = tunnel_data.iloc[0]
+    tunnel_data = tunnel_data[1:].reset_index(drop=True)
+    
+    md_swi_start = tunnel_data_end + 1
+    blank = df.iloc[md_swi_start:].isna().all(axis=1)
+    md_swi_end = blank.idxmax()
+    md_swi = df.iloc[md_swi_start:md_swi_end, 0:6]
+    md_swi.columns = md_swi.iloc[0]
+    md_swi = md_swi[1:].reset_index(drop=True)
+
+    
+    swi_data_start = md_swi_end + 1
+
+    swi_data = df.iloc[swi_data_start:, 0:9]
+
     swi_data.columns = swi_data.iloc[0]
     swi_data = swi_data[1:].reset_index(drop=True)
-
-    # print(md)
-    # print(swi_data)
-    # exit()
-
+    
+    
     return {
-        "md": md,
+        "md": md_swi,
         "swi_data": swi_data,
+        "md_top": md,
     }
+
+    # Removed redundant return statement
+
+
+def create_tacacs_config(md_top):
+    my_data = {}
+    my_data["config"] = {}
+    my_data["network_info"] = {}
+
+    global have_asked_tacacs_server
+    global tacacs_server
+    if not have_asked_tacacs_server:
+        tacacs_server = input("IP-adressen til TACACS-serveren: ")
+        have_asked_tacacs_server = True
+
+    tacacs_key = md_top.iloc[0].get("tacacs_key", "")
+
+    if not tacacs_server or not tacacs_key:
+        print("tacas feila")
+        exit(1)
+
+    my_data["config"]["aaa new-model"] = []
+    my_data["config"][f"aaa group server tacacs+ TACACS-GROUP"] = [
+        f"server-private {tacacs_server} key {tacacs_key}",
+        f"ip tacacs source-interface Vlan10",
+        "exit"
+    ]
+    my_data["config"][f"aaa authentication login default group TACACS-GROUP local"] = []
+    my_data["config"][f"aaa authorization exec default group TACACS-GROUP local"] = []
+
+    return my_data
+
+
+def create_rsyslog_config():
+    my_data = {}
+    my_data["config"] = {}
+    my_data["network_info"] = {}
+
+    global have_asked_rsyslog_server
+    global rsyslog_server
+    
+    if not have_asked_rsyslog_server:
+        rsyslog_server = input("IP-adressen til Rsyslog-serveren: ")
+        have_asked_rsyslog_server = True
+    if not have_asked_rsyslog_server:
+        rsyslog_server = input("IP-adressen til Rsyslog-serveren: ")
+
+    if not rsyslog_server:
+        print("rsyslog server not found")
+        exit(1)
+
+    my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
+    my_data["config"][f"logging host {rsyslog_server} transport udp port 514"] = []
+    my_data["config"][f"logging trap informational"] = []
+    my_data["config"][f"logging source-interface Vlan10"] = []
+
+    return my_data
 
 
 def enable_ssh(md, domain=SSH_DOMAIN):
@@ -73,12 +154,12 @@ def enable_ssh(md, domain=SSH_DOMAIN):
 
     my_data["config"][f"ip domain name {domain}"] = []
     my_data["config"][
-        f"username {username} privilege 15 secret {password}"
+        f"username {username} privilege 15 secret 9 {password}"
     ] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 4096"] = []
     my_data["config"]["ip ssh version 2"] = []
     my_data["config"][f"line vty {' '.join(x.strip(' ') for x in vty_lines.split('-'))}"] = [
-        "login local",
+        "login authentication default",
         "transport input ssh",
         "exit",
     ]
@@ -86,7 +167,7 @@ def enable_ssh(md, domain=SSH_DOMAIN):
     return my_data
 
 
-def global_config(md, swi_data):
+def global_config(md,md_top, swi_data):
     info = {}
     info["config"] = {}
     info["network_info"] = {}
@@ -108,8 +189,12 @@ def global_config(md, swi_data):
         info["config"][f"SW{sw_id}-SITE-{site}"][f"hostname SW{sw_id}-SITE-{site}"] = []
         info["config"][f"SW{sw_id}-SITE-{site}"][f"enable secret 9 {secret}"] = []
 
+        tacacs_config = create_tacacs_config(md_top) 
+        info["config"][f"SW{sw_id}-SITE-{site}"].update(tacacs_config["config"])
         ssh_config = enable_ssh(md)
         info["config"][f"SW{sw_id}-SITE-{site}"].update(ssh_config["config"])
+        rsyslog_config = create_rsyslog_config()
+        info["config"][f"SW{sw_id}-SITE-{site}"].update(rsyslog_config["config"])
 
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"vlan {mgmt_vlan}"] = [
@@ -126,6 +211,7 @@ def global_config(md, swi_data):
             f"description Management interface for VLAN {mgmt_vlan}",
             "switchport mode access",
             f"switchport access vlan {mgmt_vlan}",
+            "switchport port-security",
             "switchport port-security maximum 2",
             "switchport port-security violation restrict",
             "spanning-tree bpduguard enable",
@@ -181,6 +267,7 @@ def config_vlan(swi_data, site):
                 f"description access port for VLAN {vlan}",
                 "switchport mode access",
                 f"switchport access vlan {vlan}",
+                "switchport port-security",
                 "switchport port-security maximum 2",
                 "switchport port-security violation restrict",
                 "spanning-tree bpduguard enable",
@@ -195,7 +282,7 @@ def config_vlan(swi_data, site):
     return info
 
 
-def config_trunk_and_dchp_snooping(swi_data, site):
+def config_trunk_and_dchp_snooping(swi_data, site, md):
     info = {} 
     info["config"] = {}
     info["network_info"] = {}
@@ -220,17 +307,29 @@ def config_trunk_and_dchp_snooping(swi_data, site):
             
         intf_prefix = row["intf_prefix"]
         num_ports = row["num_ports"]
+        if type(num_ports) is not int:
+            num_ports = int(num_ports)
 
         if f"SW{sw_id}-SITE-{site}" not in info["config"]:
             info["config"][f"SW{sw_id}-SITE-{site}"] = {}
 
         to_lan = num_ports - 1
         to_core = num_ports - 2
+        
+        vlans.append(999)
+        try:
+            isp_vlan = md.iloc[0]["ISP-VLAN"]
+            if type(isp_vlan) is not int:
+                isp_vlan = int(isp_vlan)
+
+            vlans_for_dhcp_snooping = [vlan for vlan in vlans if vlan != isp_vlan]
+        except Exception as e:
+            vlans_for_dhcp_snooping = vlans
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping"] = []
-        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping vlan {','.join(map(str, vlans))}"] = []
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping vlan {','.join(map(str, vlans_for_dhcp_snooping))}"] = []
         info["config"][f"SW{sw_id}-SITE-{site}"][f"no ip dhcp snooping information option"] = []
-        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip arp inspection vlan {','.join(map(str, vlans))}"] = []
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip arp inspection vlan {','.join(map(str, vlans_for_dhcp_snooping))}"] = []
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_core}"] = [
             f"description uplink trunk port for VLAN {','.join(map(str, vlans))}",
@@ -246,11 +345,11 @@ def config_trunk_and_dchp_snooping(swi_data, site):
 
 
         info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_lan}"] = [
-            f"description downlink trunk port for VLAN {','.join(map(str, vlans))} om ikke brukt skal det brukes shutdown på porten",
+            f"description downlink trunk port for VLAN {','.join(map(str, vlans_for_dhcp_snooping))} om ikke brukt skal det brukes shutdown på porten",
             "switchport trunk encapsulation dot1q",
             "switchport trunk native vlan 999",
             "switchport mode trunk",
-            f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
+            f"switchport trunk allowed vlan {','.join(map(str, vlans_for_dhcp_snooping))}",
             "no shutdown",
             "exit"
         ]
@@ -304,19 +403,20 @@ def create_site_sw_config(file, sheet, config_file):
     data = fetch_site_data(config_file)
 
     md = sheet_data["md"]
+    md_top = sheet_data["md_top"]
     swi_data = sheet_data["swi_data"]
 
     sn = md.iloc[0]["site"]
     data[f"site {sn}"] = {}
     data[f"site {sn}"]["config"] = {}
 
-    global_conf = global_config(md, swi_data)
-    data = update_site_config(data, swi_data, sn, global_conf)
-
     vlan_conf = config_vlan(swi_data, sn)
     data = update_site_config(data, swi_data, sn, vlan_conf)
 
-    trunk_and_dchp_snooping_conf = config_trunk_and_dchp_snooping(swi_data, sn)
+    global_conf = global_config(md, md_top, swi_data)
+    data = update_site_config(data, swi_data, sn, global_conf)
+
+    trunk_and_dchp_snooping_conf = config_trunk_and_dchp_snooping(swi_data, sn, md)
     data = update_site_config(data, swi_data, sn, trunk_and_dchp_snooping_conf)
 
     with open(config_file, "w") as f:
@@ -374,6 +474,7 @@ def create_or_update_config_files(data):
             
 
     print(f"Text versjon av config for svitjer i site {site}, har blitt lagret i siteSwichTextConfigs/site_{site}/{sw_name}.txt")
+
 
 
 def create_sw_configs_main(file, config_file="site_switch_config.json"):   

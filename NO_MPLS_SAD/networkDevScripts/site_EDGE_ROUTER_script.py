@@ -18,7 +18,7 @@ def read_sheet(filename, sheet):
 
     md_start = 0
     md_end = df.iloc[md_start:].isna().all(axis=1).idxmax()
-    md = df.iloc[md_start:md_end, 0:7]
+    md = df.iloc[md_start:md_end, 0:8]
     md.columns = md.iloc[0]
     md = md[1:].reset_index(drop=True)
 
@@ -99,21 +99,15 @@ def create_vrf(vrf_data, sn):
 
     for index, row in vrf_data.iterrows():
         vrf_name = row["vrf"]
-        vrf_rt = row["rt"]
-        vrf_rd = row["rt"].replace(":", f":{sn}")
         vrf_loopback = row["loopback"]
         vrf_laddr = row["laddr"]
 
         my_data["network_info"][vrf_name] = {
-            "rt": vrf_rt,
             "loopback": vrf_loopback,
             "laddr": vrf_laddr
         }
 
         vrf_s = []
-        vrf_s.append(f"rd {vrf_rd}")
-        vrf_s.append(f"route-target export {vrf_rt}")
-        vrf_s.append(f"route-target import {vrf_rt}")
         vrf_s.append("exit")
         my_data["config"][f"ip vrf {vrf_name}"] = vrf_s
 
@@ -206,7 +200,7 @@ def create_interface(ip_data, intf_prefix):
             ]
 
             my_data["config"][f"class-map match-any QRS-{vrf}"] = [
-                f"match mpls experimental topmost {top_num}",
+                f"match dscp af{pri_afxx}",
                 "exit"
             ]
 
@@ -260,102 +254,6 @@ def create_interface(ip_data, intf_prefix):
     return my_data
 
 
-def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, site_number, is_hub):
-    my_data = {}
-    my_data["config"] = {}
-    my_data["network_info"] = {}
-
-    bgp_s = []
-    vpnv4_s = []
-
-    rt = list(vrf_data.iterrows())[0][1]["rt"]
-    as_num = rt.split(":")[0]
-
-    tmp = f"neighbor {router_id} remote-as {as_num}"
-    tmp2 = f"neighbor {router_id} update-source loopback0"
-    vpn_tmp = f"neighbor {router_id} activate"
-    vpn_tmp2 = f"neighbor {router_id} send-community extended"
-
-    other_sites = sites_data.copy()
-
-    if f"site {site_number}" in other_sites:
-        del other_sites[f"site {site_number}"]
-
-    if "hub" in other_sites:
-        del other_sites["hub"]
-
-    for site, site_data in other_sites.items():
-        net_info = site_data["network_info"]
-        loop0 = net_info["loopback0"]
-
-        bgp_s.append(f"neighbor {loop0['address']} remote-as {as_num}")
-        bgp_s.append(f"neighbor {loop0['address']} update-source loopback0")
-
-        vpnv4_s.append(f"neighbor {loop0['address']} activate")
-        vpnv4_s.append(f"neighbor {loop0['address']} send-community extended")
-
-        # Update BGP-neighbor-konfigurasjonen på allerede genererte sites.
-        l = sites_data[site]["config"][f"router bgp {as_num}"][:-5]
-        sites_data[site]["config"][f"router bgp {as_num}"] = (
-            sites_data[site]["config"][f"router bgp {as_num}"][-5:]
-        )
-
-        l.insert(0, tmp)
-        l.insert(1, tmp2)
-        l = list(set(l))
-        l.sort()
-
-        for i, x in enumerate(l):
-            sites_data[site]["config"][f"router bgp {as_num}"].insert(i, x)
-
-        l = sites_data[site]["config"][f"router bgp {as_num}"][-5][
-            "address-family vpnv4"
-        ][:-1]
-
-        l.insert(0, vpn_tmp)
-        l.insert(0, vpn_tmp2)
-        l = list(set(l))
-        l.sort()
-        l.append("exit-address-family")
-
-        sites_data[site]["config"][f"router bgp {as_num}"][-5][
-            "address-family vpnv4"
-        ] = l
-
-    vpnv4_s.append("exit-address-family")
-    bgp_s.append({"address-family vpnv4": vpnv4_s})
-
-    for index, row in ip_data.iterrows():
-        ipv4_s = []
-        vrf = row["vrf"]
-
-        is_tunnel = tunnel_data[tunnel_data["vrf"] == vrf].shape[0] > 0
-        
-        
-        vrf_loop_addr = vrf_data[vrf_data["vrf"] == vrf]["laddr"].values[0]
-        vrf_loop_mask = "255.255.255.255"
-
-        network = row["nett id"]
-        mask = row["mask"]
-
-        if not is_tunnel:
-            ipv4_s.append(f"network {network} mask {mask}")
-
-     
-        ipv4_s.append(f"network {vrf_loop_addr} mask {vrf_loop_mask}")
-        if vrf == "INET" and is_hub:
-            ipv4_s.append("network 0.0.0.0 mask 0.0.0.0")
-
-        ipv4_s.append("exit-address-family")
-
-        bgp_s.append({f"address-family ipv4 vrf {vrf}": ipv4_s})
-
-    bgp_s.append("exit")
-    my_data["config"][f"router bgp {as_num}"] = bgp_s
-
-    return my_data, sites_data
-
-
 def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     """
     Lager IPsec-konfigurasjon for en DMVPN-tunnel.
@@ -379,7 +277,6 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     ]
 
     config[f"crypto ikev2 policy {policy}"] = [
-        f"match fvrf {vrf}",
         f"proposal {proposal}",
         "exit",
     ]
@@ -397,7 +294,6 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     ]
 
     config[f"crypto ikev2 profile {ikev2_profile}"] = [
-        f"match fvrf {vrf}",
         "match identity remote address 0.0.0.0 0.0.0.0",
         "authentication remote pre-share",
         "authentication local pre-share",
@@ -471,8 +367,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         tun_s.append(f"ip vrf forwarding {vrf}")
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
-        tun_s.append(f"tunnel source {source}")
-        tun_s.append(f"tunnel vrf {vrf}")
+        tun_s.append(f"tunnel source Loopback0")
 
         if mode == "multipoint":
             tun_s.append(f"tunnel mode gre {mode}")
@@ -488,6 +383,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
                 tun_s.append("ip nhrp map multicast dynamic")
 
             tun_s.append(f"ip nhrp network-id {network_id}")
+            tun_s.append(f"tunnel key {network_id}")
 
         else:
             print(f"Mode må være multipoint for tunnel {tunnel}")
@@ -546,14 +442,27 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
             if isinstance(net, tuple):
                 network, mask, wild = net
                 tun_vrf_s.append(f"network {network} {wild}")
-            else:
-                tun_vrf_s.append(f"network {net}")
+           
+        
+        vrf_laddr = vrf_data[vrf_data["vrf"] == vrf].iloc[0].get("laddr", "")
+        if vrf_laddr:
+            tun_vrf_s.append(f"network {vrf_laddr} 0.0.0.0")
 
+        tun_vrf_s.append(f"\n")
+        tun_vrf_s.append(f"af-interface default")
+        tun_vrf_s.append(f"passive-interface")
+        tun_vrf_s.append(f"exit-af-interface\n")
+
+        tun_vrf_s.append(f"af-interface {nets[1]}")
         if is_hub:
-            tun_vrf_s.append(f"af-interface {nets[1]}")
             tun_vrf_s.append("no split-horizon")
             tun_vrf_s.append("no next-hop-self")
-            tun_vrf_s.append("exit-af-interface ")
+        tun_vrf_s.append(f"no passive-interface")
+        tun_vrf_s.append("exit-af-interface\n")
+
+        if is_hub:
+            if vrf == "INET":
+                tun_vrf_s.append("redistribute static metric 100000 10 255 1 1500")
 
         tun_vrf_s.append("exit-address-family")
         tun_s[
@@ -562,6 +471,83 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
 
     tun_s["exit"] = []
     my_data["config"]["router eigrp DMVPN-EIGRP"] = tun_s
+
+    return my_data
+
+
+def create_tacacs_config(md, ip_data, sites_data, is_hub):
+    my_data = {}
+    my_data["config"] = {}
+    my_data["network_info"] = {}
+
+    if md.empty:
+        return my_data
+
+    row = md.iloc[0]
+
+    if is_hub:
+        network = ip_data[ip_data["vrf"] == "MGMT"].iloc[0].get("nett id", "")
+        tacacs_server = str(ipaddress.ip_address(network) + 10)
+    else:
+        hub_info = sites_data[sites_data["hub"]]["network_info"]
+        for interface, info in hub_info["interfaces"].items():
+            if info.get("vrf", "") == "MGMT":
+                tacacs_server = str(ipaddress.ip_address(info.get("address", "")) - 1 + 10)
+
+    
+
+    tacacs_key = row.get("tacacs_key", "")
+    if not tacacs_server or not tacacs_key:
+        print("tacas feila")
+        exit(1)
+
+    if is_hub:
+        print(f"TACACS server: {tacacs_server}")
+        print(f"TACACS key: {tacacs_key}")
+    
+    my_data["config"]["aaa new-model"] = []
+    my_data["config"][f"aaa group server tacacs+ TACACS-GROUP"] = [
+        f"server-private {tacacs_server} key {tacacs_key}",
+        f"ip vrf forwarding MGMT",
+        f"ip tacacs source-interface loop10",
+        "exit"
+    ]
+    my_data["config"][f"aaa authentication login default group TACACS-GROUP local"] = []
+    my_data["config"][f"aaa authorization exec default group TACACS-GROUP local"] = []
+
+    return my_data
+
+
+def create_rsyslog_config(md, ip_data, sites_data, is_hub):
+    my_data = {}
+    my_data["config"] = {}
+    my_data["network_info"] = {}
+
+    if md.empty:
+        return my_data
+
+    row = md.iloc[0]
+
+    if is_hub:
+        network = ip_data[ip_data["vrf"] == "MGMT"].iloc[0].get("nett id", "")
+        rsyslog_server = str(ipaddress.ip_address(network) + 10)
+    else:
+        hub_info = sites_data[sites_data["hub"]]["network_info"]
+        for interface, info in hub_info["interfaces"].items():
+            if info.get("vrf", "") == "MGMT":
+                rsyslog_server = str(ipaddress.ip_address(info.get("address", "")) - 1 + 10)
+
+    if not rsyslog_server:
+        print("rsyslog server not found")
+        exit(1)
+        
+    if is_hub:
+        print(f"Rsyslog server: {rsyslog_server}")
+
+    my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
+    my_data["config"][f"logging host {rsyslog_server} vrf MGMT transport udp port 514"] = []
+    my_data["config"][f"logging trap informational"] = []
+    my_data["config"][f"logging source-interface loop10"] = []
 
     return my_data
 
@@ -595,7 +581,7 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
 
     my_data["config"][f"ip domain name {domain}"] = []
     my_data["config"][
-        f"username {username} privilege 15 secret {password}"
+        f"username {username} privilege 15 secret 9 {password}"
     ] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 4096"] = []
     my_data["config"]["ip ssh version 2"] = []
@@ -644,7 +630,7 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     
     my_data["config"][f"line vty {' '.join(x.strip(' ') for x in vty_lines.split('-'))}"] = [
         "access-class SSH-MGMT-ONLY in vrf-also",
-        "login local",
+        "login authentication default",
         "transport input ssh",
         "exit",
     ]
@@ -697,12 +683,10 @@ def create_global_config(md, router_id, intf_prefix, sn):
     ospf_s.append("exit")
     my_data["config"]["router ospf 1"] = ospf_s
 
-    my_data["config"]["mpls ldp router-id Loopback0 force"] = []
 
     intf_s = []
     intf_s.append("ip address dhcp")
     intf_s.append("ip ospf 1 area 0")
-    intf_s.append("mpls ip")
     intf_s.append("no shutdown")
     intf_s.append("exit")
     my_data["config"][f"interface {intf_prefix}1"] = intf_s
@@ -756,12 +740,13 @@ def config_nat(md, is_hub):
     if is_hub:
         intf_prefix = md.iloc[0]["intf_prefix"]
 
-        my_config["config"]["!\ninterface g0/1"] = [
+        my_config["config"]["!\ninterface tunnel20"] = [
             "ip nat inside",
             "exit"
         ]
 
-        my_config["config"]["interface g0/2"] = [
+        my_config["config"][f"interface {intf_prefix}0.200"] = [
+            "encapsulation dot1Q 200",
             "ip address dhcp",
             "ip nat outside",
             "no shutdown",
@@ -771,13 +756,13 @@ def config_nat(md, is_hub):
             "permit any",
             "exit"
         ]
-        my_config["config"][f"ip nat inside source list NAT-INET interface {intf_prefix}2 vrf INET overload"] = []
+        my_config["config"][f"ip nat inside source list NAT-INET interface {intf_prefix}0.200 vrf INET overload"] = []
         my_config["config"][f"!\ninterface {intf_prefix}0.20"] = [
             "ip nat inside",
             "exit"
         ]
 
-        my_config["config"][f"ip route vrf INET 0.0.0.0 0.0.0.0 {intf_prefix}2 dhcp"] = []
+        my_config["config"][f"ip route vrf INET 0.0.0.0 0.0.0.0 {intf_prefix}0.200 dhcp"] = []
 
     return my_config
 
@@ -822,10 +807,6 @@ def configure_site(sheet_file, config_file, sheet):
     
     #OPPRETT GLOBAL KONFIGURASJON
     my_data = create_global_config(md,router_id, intf_prefix, sn)
-    
-    #SSH
-    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
-    my_data["config"].update(d_ssh["config"])
 
     #NTP
     d_ntp = config_ntp(data, is_hub)
@@ -836,6 +817,18 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["config"].update(d_vrf["config"])
     my_data["network_info"].update(d_vrf["network_info"])
 
+    #TACACS
+    d_tacacs = create_tacacs_config(md, ip_data, data, is_hub)
+    my_data["config"].update(d_tacacs["config"])
+
+    #RSYSLOG
+    d_rsyslog = create_rsyslog_config(md, ip_data, data, is_hub)
+    my_data["config"].update(d_rsyslog["config"])
+
+    #SSH
+    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
+    my_data["config"].update(d_ssh["config"])
+
     #INTERFACE
     d_ip = create_interface(ip_data, intf_prefix)
     my_data["config"].update(d_ip["config"])
@@ -845,10 +838,6 @@ def configure_site(sheet_file, config_file, sheet):
     d_dhcp = set_up_DHCP_for_vrf_lans(ip_data)
     my_data["config"].update(d_dhcp["config"])
     my_data["network_info"].update(d_dhcp["network_info"])
-    
-    #BGP
-    d_bgp, data = create_mp_bgp_config(vrf_data, tunnel_data, ip_data, data, router_id, sn, is_hub)
-    my_data["config"].update(d_bgp["config"])
 
     #TUNNEL
     d_tunnel = create_tunnel_config(tunnel_data, data, is_hub)
