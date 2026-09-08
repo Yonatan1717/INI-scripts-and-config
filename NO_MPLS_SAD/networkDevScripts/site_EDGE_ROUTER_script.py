@@ -254,7 +254,7 @@ def create_interface(ip_data, intf_prefix):
     return my_data
 
 
-def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
+def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     """
     Lager IPsec-konfigurasjon for en DMVPN-tunnel.
     """
@@ -281,25 +281,52 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
         "exit",
     ]
 
+    remots_s = []
+    my_stuff = source
+
+    other_sites = sites_data.copy()
+    del other_sites["hub"]
+    del other_sites[f"site {sn}"]
+
+    for site, site_data in other_sites.items():
+        tun = site_data["network_info"].get(tunnel, [])
+
+        ip_address = tun.get("source", "")
+        mask = "255.255.255.255"
+        remots_s.append(f"address {ip_address} {mask}")
+           
+
+
+    peer = [
+        f"pre-shared-key local {psk}",
+        f"pre-shared-key remote {psk}",
+        "exit",
+    ]
+
+    for x in remots_s:
+        peer.insert(0, x)
+
+    
     config[f"crypto ikev2 keyring {keyring}"] = [
         {
-            "peer ANY": [
-                "address 0.0.0.0 0.0.0.0",
-                f"pre-shared-key local {psk}",
-                f"pre-shared-key remote {psk}",
-                "exit",
-            ]
+            "peer ANY": peer
         },
         "exit",
     ]
 
-    config[f"crypto ikev2 profile {ikev2_profile}"] = [
-        "match identity remote address 0.0.0.0 0.0.0.0",
+    prof_peer = [
         "authentication remote pre-share",
         "authentication local pre-share",
         f"keyring local {keyring}",
         "exit",
     ]
+
+    for x in remots_s:
+        prof_peer.insert(0, "match identity remote " + x )
+
+
+    config[f"crypto ikev2 profile {ikev2_profile}"] =  prof_peer
+
 
     config[
         f"crypto ipsec transform-set {transform_set} esp-aes 256 esp-sha256-hmac"
@@ -317,7 +344,7 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     return config, ipsec_profile
 
 
-def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
+def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
     my_data = {}
     my_data["network_info"] = {}
     my_data["config"] = {}
@@ -343,12 +370,21 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         # om kollone tom brukes DEFAULT_IPSEC_PSK.
         psk = row.get("ipsec key", DEFAULT_IPSEC_PSK)
         if pd.isna(psk) or str(psk).strip() == "":
-            psk = DEFAULT_IPSEC_PSK
+            psk = DEFAULT_IPSEC_PSK+f"-{network_id}"
         else:
             psk = str(psk).strip()
 
         if mode != "multipoint" and "destination" in row.index:
             destination = row["destination"]
+
+        source = str(ipaddress.ip_address(source) + network_id+1)
+        my_data["config"][f"interface loopback{network_id+1}"] = [
+            f"description Loopback interface for tunnel/ipsec {tunnel}",
+            f"ip address {source} 255.255.255.255",
+            "ip ospf 1 area 0",
+            "no shutdown",
+            "exit",
+        ]
 
         tunnel_info = {
             "is hub": is_hub,
@@ -367,7 +403,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         tun_s.append(f"ip vrf forwarding {vrf}")
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
-        tun_s.append(f"tunnel source Loopback0")
+        tun_s.append(f"tunnel source loopback{network_id+1}")
 
         if mode == "multipoint":
             tun_s.append(f"tunnel mode gre {mode}")
@@ -390,7 +426,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
 
         # IPsec aktiveres bare når kolonnen 'ipsec' er TRUE/1/yes/ja/x.
         if ipsec_enabled:
-            ipsec_config, ipsec_profile = create_ipsec_config(network_id, vrf, psk)
+            ipsec_config, ipsec_profile = create_ipsec_config(tunnel,source, sn, sites_data, network_id, vrf, psk)
             my_data["config"].update(ipsec_config)
             tun_s.append(f"tunnel protection ipsec profile {ipsec_profile}")
 
@@ -547,7 +583,7 @@ def create_rsyslog_config(md, ip_data, sites_data, is_hub):
     my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} vrf MGMT transport udp port 514"] = []
     my_data["config"][f"logging trap informational"] = []
-    my_data["config"][f"logging source-interface loop10"] = []
+    my_data["config"][f"logging source-interface loop10 vrf MGMT"] = []
 
     return my_data
 
@@ -607,9 +643,9 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     
 
     
-    permit_s = []
-    permit_s.append(f"permit {my_network} {my_wild}")
-    permit_s.append(f"permit {my_vrf_laddr} 0.0.0.0")
+    remots_s = []
+    remots_s.append(f"permit {my_network} {my_wild}")
+    remots_s.append(f"permit {my_vrf_laddr} 0.0.0.0")
     
     for site, site_data in other_sites.items():
         interfaces = site_data["network_info"].get("interfaces", [])
@@ -620,12 +656,12 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
                 network = str(ipaddress.ip_address(ip_address) - 1)
                 mask = intf_data.get("mask", "")
                 network, mask, wild = getNetId(network, mask)
-                permit_s.append(f"permit {network} {wild}")
+                remots_s.append(f"permit {network} {wild}")
 
                 if f"permit {my_network} {my_wild}" not in sites_data[site]["config"][f"ip access-list standard SSH-MGMT-ONLY"]:
                     sites_data[site]["config"][f"ip access-list standard SSH-MGMT-ONLY"].append(f"permit {my_network} {my_wild}")
                 
-    my_data["config"][f"ip access-list standard SSH-MGMT-ONLY"] = permit_s
+    my_data["config"][f"ip access-list standard SSH-MGMT-ONLY"] = remots_s
 
     
     my_data["config"][f"line vty {' '.join(x.strip(' ') for x in vty_lines.split('-'))}"] = [
@@ -854,9 +890,7 @@ def configure_site(sheet_file, config_file, sheet):
     d_rsyslog = create_rsyslog_config(md, ip_data, data, is_hub)
     my_data["config"].update(d_rsyslog["config"])
 
-    #SSH
-    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
-    my_data["config"].update(d_ssh["config"])
+
 
     #INTERFACE
     d_ip = create_interface(ip_data, intf_prefix)
@@ -869,7 +903,7 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["network_info"].update(d_dhcp["network_info"])
 
     #TUNNEL
-    d_tunnel = create_tunnel_config(tunnel_data, data, is_hub)
+    d_tunnel = create_tunnel_config(tunnel_data, data, is_hub, sn)
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
@@ -881,7 +915,11 @@ def configure_site(sheet_file, config_file, sheet):
     #NAT
     d_nat = config_nat(md, is_hub)
     my_data["config"].update(d_nat["config"])
-    
+
+    #SSH
+    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
+    my_data["config"].update(d_ssh["config"])   
+     
     #INTerFACE PREFIX
     my_data["intf_prefix"] = intf_prefix
 

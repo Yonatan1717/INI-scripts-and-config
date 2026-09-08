@@ -209,7 +209,7 @@ def global_config(md,md_top, swi_data):
             "exit"
         ]
 
-        info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}0"] = [
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}1"] = [
             f"description Management interface for VLAN {mgmt_vlan}",
             "ip arp inspection trust",
             "switchport mode access",
@@ -273,7 +273,7 @@ def config_vlan(swi_data, site, md):
                 "exit"
             ]
 
-            rng = f"{made + 1}-{made + antall}" if antall > 1 else f"{made + 1}"
+            rng = f"{made + 2}-{made + antall+1}" if antall > 1 else f"{made + 2}"
             range_or_not = "range " if antall > 1 else "" 
 
             info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {range_or_not}{intf_prefix}{rng}"] = [
@@ -330,8 +330,8 @@ def config_trunk_and_dchp_snooping(swi_data, site, md):
         if f"SW{sw_id}-SITE-{site}" not in info["config"]:
             info["config"][f"SW{sw_id}-SITE-{site}"] = {}
 
-        to_lan = num_ports - 2
-        to_core = num_ports - 1
+        to_lan = num_ports - 1
+        to_core = num_ports - 0
         
         vlans.append(999)
         
@@ -387,7 +387,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md):
         ports_left = num_ports - tot_antall_port - 2 - num_down_ports
         if ports_left > 0:
             start_int = tot_antall_port + 1
-            end_int = num_ports - 2 - num_down_ports
+            end_int = num_ports - 2 - num_down_ports + 1 
             range_or_not = "range " if start_int != end_int else ""
 
             rng = f"{start_int}-{end_int}" if start_int != end_int else f"{start_int}"
