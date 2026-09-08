@@ -9,6 +9,7 @@ Extract the contents of the tarball in the directory where the source code was d
 cd /opt && tar -xzf tacacs-F4.0.4.28.tar.gz
 
 Compile and install the “tac_plus” source code:
+cd /opt/tacacs-F4.0.4.28 && ./configure --prefix=/tacacs && make && make install
 
 The final step is to enable and start the service:
 systemctl enable tac_plus
