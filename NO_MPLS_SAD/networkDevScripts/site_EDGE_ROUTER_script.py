@@ -18,7 +18,9 @@ def read_sheet(filename, sheet):
 
     md_start = 0
     md_end = df.iloc[md_start:].isna().all(axis=1).idxmax()
-    md = df.iloc[md_start:md_end, 0:9]
+    # Metadata width is intentionally dynamic so new product options (for
+    # example dns_servers) can be added in Excel without changing this parser.
+    md = df.iloc[md_start:md_end].dropna(axis=1, how="all")
     md.columns = md.iloc[0]
     md = md[1:].reset_index(drop=True)
 
@@ -72,6 +74,21 @@ def is_true(value):
         return value == 1
 
     return str(value).strip().lower() in {"true", "1", "yes", "ja", "y", "x"}
+
+
+def unique_preserve_order(values):
+    """Fjern duplikater uten å endre CLI-rekkefølgen."""
+    result = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def ensure_exit_last(commands):
+    """Sørg for at Cisco `exit` alltid er siste kommando i en CLI-blokk."""
+    commands = [cmd for cmd in commands if cmd != "exit"]
+    return unique_preserve_order(commands) + ["exit"]
 
 
 def getNetId(ip, mask):
@@ -254,7 +271,7 @@ def create_interface(ip_data, intf_prefix):
     return my_data
 
 
-def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
+def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, is_hub,psk=DEFAULT_IPSEC_PSK):
     """
     Lager IPsec-konfigurasjon for en DMVPN-tunnel.
     """
@@ -281,25 +298,69 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
         "exit",
     ]
 
+    remots_s = []
+    my_stuff = source
+    other_sites = sites_data.copy()
+    del other_sites["hub"]
+
+    if len(other_sites) > 0:
+        if f"site {sn}" in other_sites:
+            del other_sites[f"site {sn}"]
+
+        for site, site_data in other_sites.items():
+            tun = site_data["network_info"].get(tunnel, [])
+
+            ip_address = tun.get("source", "")
+            mask = "255.255.255.255"
+            remots_s.append(f"address {ip_address} {mask}")
+
+            # Oppdater allerede genererte sites når en ny DMVPN-peer blir kjent.
+            # IKKE bruk set() her: Cisco CLI er rekkefølgeavhengig, og `exit` må stå sist.
+            keyring_key = f"crypto ikev2 keyring {keyring}"
+            profile_key = f"crypto ikev2 profile {ikev2_profile}"
+
+            if keyring_key not in sites_data[site]["config"] or profile_key not in sites_data[site]["config"]:
+                raise ValueError(
+                    f"IPsec-oppsettet for {tunnel} er inkonsistent mellom site {sn} og {site}. "
+                    "Samme DMVPN-cloud må bruke IPsec på alle deltakende sites."
+                )
+
+            site_pers = sites_data[site]["config"][keyring_key][0]["peer ANY"]
+            site_pers = [f"address {my_stuff} {mask}"] + site_pers
+            sites_data[site]["config"][keyring_key][0]["peer ANY"] = ensure_exit_last(site_pers)
+
+            site_profile_pers = sites_data[site]["config"][profile_key]
+            new_match = f"match identity remote address {my_stuff} {mask}"
+            site_profile_pers = [new_match] + site_profile_pers
+            sites_data[site]["config"][profile_key] = ensure_exit_last(site_profile_pers)
+
+
+    peer = ensure_exit_last(
+        remots_s
+        + [
+            f"pre-shared-key local {psk}",
+            f"pre-shared-key remote {psk}",
+        ]
+    )
+
     config[f"crypto ikev2 keyring {keyring}"] = [
         {
-            "peer ANY": [
-                "address 0.0.0.0 0.0.0.0",
-                f"pre-shared-key local {psk}",
-                f"pre-shared-key remote {psk}",
-                "exit",
-            ]
+            "peer ANY": peer
         },
         "exit",
     ]
 
-    config[f"crypto ikev2 profile {ikev2_profile}"] = [
-        "match identity remote address 0.0.0.0 0.0.0.0",
-        "authentication remote pre-share",
-        "authentication local pre-share",
-        f"keyring local {keyring}",
-        "exit",
-    ]
+    prof_peer = ensure_exit_last(
+        [f"match identity remote {remote}" for remote in remots_s]
+        + [
+            "authentication remote pre-share",
+            "authentication local pre-share",
+            f"keyring local {keyring}",
+        ]
+    )
+
+    config[f"crypto ikev2 profile {ikev2_profile}"] = prof_peer
+
 
     config[
         f"crypto ipsec transform-set {transform_set} esp-aes 256 esp-sha256-hmac"
@@ -314,10 +375,10 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
         "exit",
     ]
 
-    return config, ipsec_profile
+    return config, ipsec_profile, sites_data
 
 
-def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
+def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
     my_data = {}
     my_data["network_info"] = {}
     my_data["config"] = {}
@@ -343,12 +404,21 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         # om kollone tom brukes DEFAULT_IPSEC_PSK.
         psk = row.get("ipsec key", DEFAULT_IPSEC_PSK)
         if pd.isna(psk) or str(psk).strip() == "":
-            psk = DEFAULT_IPSEC_PSK
+            psk = DEFAULT_IPSEC_PSK+f"-{network_id}"
         else:
             psk = str(psk).strip()
 
         if mode != "multipoint" and "destination" in row.index:
             destination = row["destination"]
+
+        source = str(ipaddress.ip_address(source) + network_id+1)
+        my_data["config"][f"interface loopback{network_id+1}"] = [
+            f"description Loopback interface for tunnel/ipsec {tunnel}",
+            f"ip address {source} 255.255.255.255",
+            "ip ospf 1 area 0",
+            "no shutdown",
+            "exit",
+        ]
 
         tunnel_info = {
             "is hub": is_hub,
@@ -367,7 +437,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         tun_s.append(f"ip vrf forwarding {vrf}")
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
-        tun_s.append(f"tunnel source Loopback0")
+        tun_s.append(f"tunnel source loopback{network_id+1}")
 
         if mode == "multipoint":
             tun_s.append(f"tunnel mode gre {mode}")
@@ -390,7 +460,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
 
         # IPsec aktiveres bare når kolonnen 'ipsec' er TRUE/1/yes/ja/x.
         if ipsec_enabled:
-            ipsec_config, ipsec_profile = create_ipsec_config(network_id, vrf, psk)
+            ipsec_config, ipsec_profile, sites_data = create_ipsec_config(tunnel,source, sn, sites_data, network_id, vrf, is_hub, psk)
             my_data["config"].update(ipsec_config)
             tun_s.append(f"tunnel protection ipsec profile {ipsec_profile}")
 
@@ -399,7 +469,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         my_data["config"][f"interface {tunnel}"] = tun_s
         my_data["network_info"][tunnel] = tunnel_info
 
-    return my_data
+    return my_data, sites_data
 
 
 def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
@@ -547,7 +617,7 @@ def create_rsyslog_config(md, ip_data, sites_data, is_hub):
     my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} vrf MGMT transport udp port 514"] = []
     my_data["config"][f"logging trap informational"] = []
-    my_data["config"][f"logging source-interface loop10"] = []
+    my_data["config"][f"logging source-interface loop10 vrf MGMT"] = []
 
     return my_data
 
@@ -607,9 +677,9 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     
 
     
-    permit_s = []
-    permit_s.append(f"permit {my_network} {my_wild}")
-    permit_s.append(f"permit {my_vrf_laddr} 0.0.0.0")
+    remots_s = []
+    remots_s.append(f"permit {my_network} {my_wild}")
+    remots_s.append(f"permit {my_vrf_laddr} 0.0.0.0")
     
     for site, site_data in other_sites.items():
         interfaces = site_data["network_info"].get("interfaces", [])
@@ -620,12 +690,12 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
                 network = str(ipaddress.ip_address(ip_address) - 1)
                 mask = intf_data.get("mask", "")
                 network, mask, wild = getNetId(network, mask)
-                permit_s.append(f"permit {network} {wild}")
+                remots_s.append(f"permit {network} {wild}")
 
                 if f"permit {my_network} {my_wild}" not in sites_data[site]["config"][f"ip access-list standard SSH-MGMT-ONLY"]:
                     sites_data[site]["config"][f"ip access-list standard SSH-MGMT-ONLY"].append(f"permit {my_network} {my_wild}")
                 
-    my_data["config"][f"ip access-list standard SSH-MGMT-ONLY"] = permit_s
+    my_data["config"][f"ip access-list standard SSH-MGMT-ONLY"] = remots_s
 
     
     my_data["config"][f"line vty {' '.join(x.strip(' ') for x in vty_lines.split('-'))}"] = [
@@ -684,7 +754,7 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     my_data["config"]["router ospf 1"] = ospf_s
 
 
-    dhcp = md.iloc[0].get("DHCP", False)
+    dhcp = is_true(md.iloc[0].get("DHCP", False))
     dhcp_config = {}
     if is_hub and dhcp:
         dhcp_config = {
@@ -727,10 +797,32 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     return my_data
 
 
-def set_up_DHCP_for_vrf_lans(ip_data):
+def get_dns_servers(md):
+    """Return validated DNS server IPs from the optional Excel dns_servers field."""
+    if md.empty or "dns_servers" not in md.columns:
+        return []
+
+    value = md.iloc[0].get("dns_servers", "")
+    if pd.isna(value) or not str(value).strip():
+        return []
+
+    # Accept spaces, commas, or semicolons in the Excel cell.
+    raw = str(value).replace(",", " ").replace(";", " ")
+    servers = [item.strip() for item in raw.split() if item.strip()]
+    for server in servers:
+        try:
+            ipaddress.ip_address(server)
+        except ValueError as exc:
+            raise ValueError(f"Ugyldig DNS-server i Excel: {server}") from exc
+    return servers
+
+
+def set_up_DHCP_for_vrf_lans(ip_data, md):
     my_config = {}
     my_config["config"] = {}
     my_config["network_info"] = {}
+
+    dns_servers = get_dns_servers(md)
 
     for idx, row in ip_data.iterrows():
         vrf = row["vrf"]
@@ -738,16 +830,19 @@ def set_up_DHCP_for_vrf_lans(ip_data):
         network = row["nett id"]
         mask = row["mask"]
         num_res = row["antall-res"]
-        
+
         ip_res_to = str(ipaddress.ip_address(ip_gw) + num_res)
-        
-        my_config["config"][f"ip dhcp pool DHCP-{vrf}"] = [
+
+        pool = [
             f"vrf {vrf}",
             f"network {network} {mask}",
             f"default-router {ip_gw}",
-            "dns-server 8.8.8.8 1.1.1.1" if vrf == "INET" else "!",
-            "exit"
         ]
+        if vrf == "INET" and dns_servers:
+            pool.append(f"dns-server {' '.join(dns_servers)}")
+        pool.append("exit")
+
+        my_config["config"][f"ip dhcp pool DHCP-{vrf}"] = pool
 
         my_config["config"][f"ip dhcp excluded-address vrf {vrf} {ip_gw} {ip_res_to}"] = []
 
@@ -854,9 +949,7 @@ def configure_site(sheet_file, config_file, sheet):
     d_rsyslog = create_rsyslog_config(md, ip_data, data, is_hub)
     my_data["config"].update(d_rsyslog["config"])
 
-    #SSH
-    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
-    my_data["config"].update(d_ssh["config"])
+
 
     #INTERFACE
     d_ip = create_interface(ip_data, intf_prefix)
@@ -864,12 +957,12 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["network_info"].update(d_ip["network_info"])
     
     #DHCP
-    d_dhcp = set_up_DHCP_for_vrf_lans(ip_data)
+    d_dhcp = set_up_DHCP_for_vrf_lans(ip_data, md)
     my_data["config"].update(d_dhcp["config"])
     my_data["network_info"].update(d_dhcp["network_info"])
 
     #TUNNEL
-    d_tunnel = create_tunnel_config(tunnel_data, data, is_hub)
+    d_tunnel, data = create_tunnel_config(tunnel_data, data, is_hub, sn)
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
@@ -881,7 +974,11 @@ def configure_site(sheet_file, config_file, sheet):
     #NAT
     d_nat = config_nat(md, is_hub)
     my_data["config"].update(d_nat["config"])
-    
+
+    #SSH
+    d_ssh, data = enable_ssh(md, vrf_data, ip_data, data, sn)
+    my_data["config"].update(d_ssh["config"])   
+     
     #INTerFACE PREFIX
     my_data["intf_prefix"] = intf_prefix
 

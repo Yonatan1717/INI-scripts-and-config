@@ -18,7 +18,9 @@ def read_sheet(filename, sheet):
 
     md_start = 0
     md_end = df.iloc[md_start:].isna().all(axis=1).idxmax()
-    md = df.iloc[md_start:md_end, 0:9]
+    # Metadata width is intentionally dynamic so new product options (for
+    # example dns_servers) can be added in Excel without changing this parser.
+    md = df.iloc[md_start:md_end].dropna(axis=1, how="all")
     md.columns = md.iloc[0]
     md = md[1:].reset_index(drop=True)
 
@@ -72,6 +74,21 @@ def is_true(value):
         return value == 1
 
     return str(value).strip().lower() in {"true", "1", "yes", "ja", "y", "x"}
+
+
+def unique_preserve_order(values):
+    """Fjern duplikater uten å endre CLI-rekkefølgen."""
+    result = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def ensure_exit_last(commands):
+    """Sørg for at Cisco `exit` alltid er siste kommando i en CLI-blokk."""
+    commands = [cmd for cmd in commands if cmd != "exit"]
+    return unique_preserve_order(commands) + ["exit"]
 
 
 def getNetId(ip, mask):
@@ -356,9 +373,13 @@ def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, 
     return my_data, sites_data
 
 
-def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
+def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEFAULT_IPSEC_PSK):
     """
-    Lager IPsec-konfigurasjon for en DMVPN-tunnel.
+    Lager IPsec-konfigurasjon for en DMVPN-tunnel over MPLS/VRF-underlay.
+
+    Eksisterende sites oppdateres når en ny peer blir kjent. Cisco CLI er
+    rekkefølgeavhengig, derfor fjernes duplikater uten bruk av set(), og
+    `exit` holdes alltid som siste kommando i keyring/profile-blokkene.
     """
     suffix = str(network_id).strip()
 
@@ -384,26 +405,71 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
         "exit",
     ]
 
+    remotes = []
+    other_sites = sites_data.copy()
+    other_sites.pop("hub", None)
+    other_sites.pop(f"site {sn}", None)
+
+    for site, site_data in other_sites.items():
+        peer_source = site_data["network_info"].get(tunnel, {}).get("source", "")
+        if not peer_source:
+            continue
+
+        peer_address = f"address {peer_source} 255.255.255.255"
+        remotes.append(peer_address)
+
+        # Dersom én site i samme DMVPN-cloud mangler IPsec-konfig, er inputen
+        # inkonsistent. Gi en tydelig feil i stedet for en KeyError.
+        keyring_key = f"crypto ikev2 keyring {keyring}"
+        profile_key = f"crypto ikev2 profile {ikev2_profile}"
+        if keyring_key not in sites_data[site]["config"] or profile_key not in sites_data[site]["config"]:
+            raise ValueError(
+                f"IPsec-oppsettet for {tunnel} er inkonsistent mellom site {sn} og {site}. "
+                "Samme DMVPN-cloud må bruke IPsec på alle deltakende sites."
+            )
+
+        # Oppdater keyringen på allerede generert site. Adressekommandoene skal
+        # ligge før PSK-linjene, og `exit` skal alltid være sist.
+        peer_config = sites_data[site]["config"][keyring_key][0]["peer ANY"]
+        source_address = f"address {source} 255.255.255.255"
+        peer_config = [source_address] + peer_config
+        sites_data[site]["config"][keyring_key][0]["peer ANY"] = ensure_exit_last(peer_config)
+
+        # MPLS-versjonen trenger `match fvrf` først. Nye remote identities
+        # legges derfor inn rett etter fvrf-linjen og før authentication/keyring.
+        profile_config = sites_data[site]["config"][profile_key]
+        profile_config = [cmd for cmd in profile_config if cmd != "exit"]
+        remote_identity = f"match identity remote address {source} 255.255.255.255"
+        if remote_identity not in profile_config:
+            insert_at = 1 if profile_config and profile_config[0].startswith("match fvrf ") else 0
+            profile_config.insert(insert_at, remote_identity)
+        sites_data[site]["config"][profile_key] = ensure_exit_last(profile_config)
+
+    peer = ensure_exit_last(
+        remotes
+        + [
+            f"pre-shared-key local {psk}",
+            f"pre-shared-key remote {psk}",
+        ]
+    )
+
     config[f"crypto ikev2 keyring {keyring}"] = [
         {
-            "peer ANY": [
-                "address 0.0.0.0 0.0.0.0",
-                f"pre-shared-key local {psk}",
-                f"pre-shared-key remote {psk}",
-                "exit",
-            ]
+            "peer ANY": peer
         },
         "exit",
     ]
 
-    config[f"crypto ikev2 profile {ikev2_profile}"] = [
-        f"match fvrf {vrf}",
-        "match identity remote address 0.0.0.0 0.0.0.0",
-        "authentication remote pre-share",
-        "authentication local pre-share",
-        f"keyring local {keyring}",
-        "exit",
-    ]
+    profile_remotes = [f"match identity remote {remote}" for remote in remotes]
+    config[f"crypto ikev2 profile {ikev2_profile}"] = ensure_exit_last(
+        [
+            f"match fvrf {vrf}",
+            *profile_remotes,
+            "authentication remote pre-share",
+            "authentication local pre-share",
+            f"keyring local {keyring}",
+        ]
+    )
 
     config[
         f"crypto ipsec transform-set {transform_set} esp-aes 256 esp-sha256-hmac"
@@ -418,10 +484,10 @@ def create_ipsec_config(network_id, vrf, psk=DEFAULT_IPSEC_PSK):
         "exit",
     ]
 
-    return config, ipsec_profile
+    return config, ipsec_profile, sites_data
 
 
-def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
+def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
     my_data = {}
     my_data["network_info"] = {}
     my_data["config"] = {}
@@ -447,12 +513,21 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         # om kollone tom brukes DEFAULT_IPSEC_PSK.
         psk = row.get("ipsec key", DEFAULT_IPSEC_PSK)
         if pd.isna(psk) or str(psk).strip() == "":
-            psk = DEFAULT_IPSEC_PSK
+            psk = f"{DEFAULT_IPSEC_PSK}-{network_id}"
         else:
             psk = str(psk).strip()
 
         if mode != "multipoint" and "destination" in row.index:
             destination = row["destination"]
+
+        source = str(ipaddress.ip_address(source) + network_id + 1)
+        my_data["config"][f"interface loopback{network_id + 1}"] = [
+            f"description Loopback interface for tunnel/ipsec {tunnel}",
+            f"ip address {source} 255.255.255.255",
+            "ip ospf 1 area 0",
+            "no shutdown",
+            "exit",
+        ]
 
         tunnel_info = {
             "is hub": is_hub,
@@ -471,7 +546,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         tun_s.append(f"ip vrf forwarding {vrf}")
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
-        tun_s.append(f"tunnel source {source}")
+        tun_s.append(f"tunnel source loopback{network_id + 1}")
         tun_s.append(f"tunnel vrf {vrf}")
 
         if mode == "multipoint":
@@ -488,13 +563,16 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
                 tun_s.append("ip nhrp map multicast dynamic")
 
             tun_s.append(f"ip nhrp network-id {network_id}")
+            tun_s.append(f"tunnel key {network_id}")
 
         else:
             print(f"Mode må være multipoint for tunnel {tunnel}")
 
         # IPsec aktiveres bare når kolonnen 'ipsec' er TRUE/1/yes/ja/x.
         if ipsec_enabled:
-            ipsec_config, ipsec_profile = create_ipsec_config(network_id, vrf, psk)
+            ipsec_config, ipsec_profile, sites_data = create_ipsec_config(
+                tunnel, source, sn, sites_data, network_id, vrf, psk
+            )
             my_data["config"].update(ipsec_config)
             tun_s.append(f"tunnel protection ipsec profile {ipsec_profile}")
 
@@ -503,7 +581,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool):
         my_data["config"][f"interface {tunnel}"] = tun_s
         my_data["network_info"][tunnel] = tunnel_info
 
-    return my_data
+    return my_data, sites_data
 
 
 def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
@@ -546,14 +624,22 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
             if isinstance(net, tuple):
                 network, mask, wild = net
                 tun_vrf_s.append(f"network {network} {wild}")
-            else:
-                tun_vrf_s.append(f"network {net}")
 
+        vrf_laddr = vrf_data[vrf_data["vrf"] == vrf].iloc[0].get("laddr", "")
+        if vrf_laddr:
+            tun_vrf_s.append(f"network {vrf_laddr} 0.0.0.0")
+
+        tun_vrf_s.append("")
+        tun_vrf_s.append("af-interface default")
+        tun_vrf_s.append("passive-interface")
+        tun_vrf_s.append("exit-af-interface")
+        tun_vrf_s.append("")
+        tun_vrf_s.append(f"af-interface {nets[1]}")
         if is_hub:
-            tun_vrf_s.append(f"af-interface {nets[1]}")
             tun_vrf_s.append("no split-horizon")
             tun_vrf_s.append("no next-hop-self")
-            tun_vrf_s.append("exit-af-interface ")
+        tun_vrf_s.append("no passive-interface")
+        tun_vrf_s.append("exit-af-interface")
 
 
         if is_hub:
@@ -644,7 +730,7 @@ def create_rsyslog_config(md, ip_data, sites_data, is_hub):
     my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} vrf MGMT transport udp port 514"] = []
     my_data["config"][f"logging trap informational"] = []
-    my_data["config"][f"logging source-interface loop10"] = []
+    my_data["config"][f"logging source-interface loop10 vrf MGMT"] = []
 
     return my_data
 
@@ -782,7 +868,7 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
 
     my_data["config"]["mpls ldp router-id Loopback0 force"] = []
 
-    dhcp = md.iloc[0].get("DHCP", False)
+    dhcp = is_true(md.iloc[0].get("DHCP", False))
     dhcp_config = {}
     if is_hub and dhcp:
         dhcp_config = {
@@ -825,10 +911,32 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     return my_data
 
 
-def set_up_DHCP_for_vrf_lans(ip_data):
+def get_dns_servers(md):
+    """Return validated DNS server IPs from the optional Excel dns_servers field."""
+    if md.empty or "dns_servers" not in md.columns:
+        return []
+
+    value = md.iloc[0].get("dns_servers", "")
+    if pd.isna(value) or not str(value).strip():
+        return []
+
+    # Accept spaces, commas, or semicolons in the Excel cell.
+    raw = str(value).replace(",", " ").replace(";", " ")
+    servers = [item.strip() for item in raw.split() if item.strip()]
+    for server in servers:
+        try:
+            ipaddress.ip_address(server)
+        except ValueError as exc:
+            raise ValueError(f"Ugyldig DNS-server i Excel: {server}") from exc
+    return servers
+
+
+def set_up_DHCP_for_vrf_lans(ip_data, md):
     my_config = {}
     my_config["config"] = {}
     my_config["network_info"] = {}
+
+    dns_servers = get_dns_servers(md)
 
     for idx, row in ip_data.iterrows():
         vrf = row["vrf"]
@@ -836,17 +944,19 @@ def set_up_DHCP_for_vrf_lans(ip_data):
         network = row["nett id"]
         mask = row["mask"]
         num_res = row["antall-res"]
-        
+
         ip_res_to = str(ipaddress.ip_address(ip_gw) + num_res)
-        
-        
-        my_config["config"][f"ip dhcp pool DHCP-{vrf}"] = [
+
+        pool = [
             f"vrf {vrf}",
             f"network {network} {mask}",
             f"default-router {ip_gw}",
-            "dns-server 8.8.8.8 1.1.1.1" if vrf == "INET" else "!",
-            "exit"
         ]
+        if vrf == "INET" and dns_servers:
+            pool.append(f"dns-server {' '.join(dns_servers)}")
+        pool.append("exit")
+
+        my_config["config"][f"ip dhcp pool DHCP-{vrf}"] = pool
 
         my_config["config"][f"ip dhcp excluded-address vrf {vrf} {ip_gw} {ip_res_to}"] = []
 
@@ -958,7 +1068,7 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["network_info"].update(d_ip["network_info"])
     
     #DHCP
-    d_dhcp = set_up_DHCP_for_vrf_lans(ip_data)
+    d_dhcp = set_up_DHCP_for_vrf_lans(ip_data, md)
     my_data["config"].update(d_dhcp["config"])
     my_data["network_info"].update(d_dhcp["network_info"])
     
@@ -967,7 +1077,7 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["config"].update(d_bgp["config"])
 
     #TUNNEL
-    d_tunnel = create_tunnel_config(tunnel_data, data, is_hub)
+    d_tunnel, data = create_tunnel_config(tunnel_data, data, is_hub, sn)
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
