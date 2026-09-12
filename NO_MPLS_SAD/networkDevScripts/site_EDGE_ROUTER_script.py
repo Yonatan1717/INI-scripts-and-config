@@ -271,11 +271,7 @@ def create_interface(ip_data, intf_prefix):
     return my_data
 
 
-<<<<<<< HEAD
 def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, is_hub,psk=DEFAULT_IPSEC_PSK):
-=======
-def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEFAULT_IPSEC_PSK):
->>>>>>> f44561456658fa104e20256303069e22ca5c162f
     """
     Lager IPsec-konfigurasjon for en DMVPN-tunnel.
     """
@@ -304,7 +300,6 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
 
     remots_s = []
     my_stuff = source
-<<<<<<< HEAD
     other_sites = sites_data.copy()
     del other_sites["hub"]
 
@@ -348,32 +343,6 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
         ]
     )
 
-=======
-
-    other_sites = sites_data.copy()
-    del other_sites["hub"]
-    del other_sites[f"site {sn}"]
-
-    for site, site_data in other_sites.items():
-        tun = site_data["network_info"].get(tunnel, [])
-
-        ip_address = tun.get("source", "")
-        mask = "255.255.255.255"
-        remots_s.append(f"address {ip_address} {mask}")
-           
-
-
-    peer = [
-        f"pre-shared-key local {psk}",
-        f"pre-shared-key remote {psk}",
-        "exit",
-    ]
-
-    for x in remots_s:
-        peer.insert(0, x)
-
-    
->>>>>>> f44561456658fa104e20256303069e22ca5c162f
     config[f"crypto ikev2 keyring {keyring}"] = [
         {
             "peer ANY": peer
@@ -381,7 +350,6 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
         "exit",
     ]
 
-<<<<<<< HEAD
     prof_peer = ensure_exit_last(
         [f"match identity remote {remote}" for remote in remots_s]
         + [
@@ -392,21 +360,6 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
     )
 
     config[f"crypto ikev2 profile {ikev2_profile}"] = prof_peer
-
-=======
-    prof_peer = [
-        "authentication remote pre-share",
-        "authentication local pre-share",
-        f"keyring local {keyring}",
-        "exit",
-    ]
->>>>>>> f44561456658fa104e20256303069e22ca5c162f
-
-    for x in remots_s:
-        prof_peer.insert(0, "match identity remote " + x )
-
-
-    config[f"crypto ikev2 profile {ikev2_profile}"] =  prof_peer
 
 
     config[
@@ -507,11 +460,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
 
         # IPsec aktiveres bare når kolonnen 'ipsec' er TRUE/1/yes/ja/x.
         if ipsec_enabled:
-<<<<<<< HEAD
             ipsec_config, ipsec_profile, sites_data = create_ipsec_config(tunnel,source, sn, sites_data, network_id, vrf, is_hub, psk)
-=======
-            ipsec_config, ipsec_profile = create_ipsec_config(tunnel,source, sn, sites_data, network_id, vrf, psk)
->>>>>>> f44561456658fa104e20256303069e22ca5c162f
             my_data["config"].update(ipsec_config)
             tun_s.append(f"tunnel protection ipsec profile {ipsec_profile}")
 
@@ -1013,11 +962,7 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["network_info"].update(d_dhcp["network_info"])
 
     #TUNNEL
-<<<<<<< HEAD
     d_tunnel, data = create_tunnel_config(tunnel_data, data, is_hub, sn)
-=======
-    d_tunnel = create_tunnel_config(tunnel_data, data, is_hub, sn)
->>>>>>> f44561456658fa104e20256303069e22ca5c162f
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
