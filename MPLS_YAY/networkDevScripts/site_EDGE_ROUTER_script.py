@@ -301,6 +301,8 @@ def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, 
     if "hub" in other_sites:
         del other_sites["hub"]
 
+    num_vrfs = vrf_data.shape[0]
+    neg_idx = -(num_vrfs + 2)
     for site, site_data in other_sites.items():
         net_info = site_data["network_info"]
         loop0 = net_info["loopback0"]
@@ -312,10 +314,8 @@ def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, 
         vpnv4_s.append(f"neighbor {loop0['address']} send-community extended")
 
         # Update BGP-neighbor-konfigurasjonen på allerede genererte sites.
-        l = sites_data[site]["config"][f"router bgp {as_num}"][:-5]
-        sites_data[site]["config"][f"router bgp {as_num}"] = (
-            sites_data[site]["config"][f"router bgp {as_num}"][-5:]
-        )
+        l = sites_data[site]["config"][f"router bgp {as_num}"][:neg_idx]
+        sites_data[site]["config"][f"router bgp {as_num}"] = sites_data[site]["config"][f"router bgp {as_num}"][neg_idx:]
 
         l.insert(0, tmp)
         l.insert(1, tmp2)
@@ -325,7 +325,7 @@ def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, 
         for i, x in enumerate(l):
             sites_data[site]["config"][f"router bgp {as_num}"].insert(i, x)
 
-        l = sites_data[site]["config"][f"router bgp {as_num}"][-5][
+        l = sites_data[site]["config"][f"router bgp {as_num}"][neg_idx][
             "address-family vpnv4"
         ][:-1]
 
@@ -335,7 +335,7 @@ def create_mp_bgp_config(vrf_data, tunnel_data, ip_data, sites_data, router_id, 
         l.sort()
         l.append("exit-address-family")
 
-        sites_data[site]["config"][f"router bgp {as_num}"][-5][
+        sites_data[site]["config"][f"router bgp {as_num}"][neg_idx][
             "address-family vpnv4"
         ] = l
 
