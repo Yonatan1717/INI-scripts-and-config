@@ -61,6 +61,13 @@ def read_sheet(filename, sheet):
 
     # Removed redundant return statement
 
+def af_priority(af):
+    af = int(af)
+
+    af_class = af // 10
+    drop_precedence = af % 10
+
+    return af_class, -drop_precedence
 
 def is_true(value):
     """
@@ -148,40 +155,86 @@ def create_vrf(vrf_data, sn):
 
 
 def create_interface(ip_data, intf_prefix):
-    my_data = {}
-    my_data["config"] = {}
-    my_data["network_info"] = {}
+    my_data = {
+        "config": {},
+        "network_info": {}
+    }
+
     intf_nums = list(ip_data["interface"])
-    
+
     tot_pri_num = ip_data["pri-1-10"].sum()
     max_prc = 75
-    
-    pol_maps= {}
+
+    pol_maps = {}
+
+    pairs = ip_data[["vrf", "pri-afxx"]].drop_duplicates()
+
+    # Samme VRF skal ikke kunne ha flere forskjellige AF-verdier
+    if pairs["vrf"].duplicated().any():
+        duplicates = pairs[pairs["vrf"].duplicated(keep=False)]
+
+        raise ValueError(
+            "Samme VRF har flere forskjellige pri-afxx-verdier:\n"
+            + duplicates.to_string(index=False)
+        )
+
+    vrfs = dict(pairs.values)
+
+    ordered = sorted(
+        vrfs.items(),
+        key=lambda item: af_priority(item[1]),
+        reverse=True
+    )
+
+    if len(ordered) > 7:
+        raise ValueError(
+            "For mange QoS-klasser. MPLS EXP støtter maks 7 "
+            "prioriteringsnivåer når EXP 0 reserveres til best-effort."
+        )
+
+    mpls_exp = {}
+
+    num_vrfs = len(ordered)
+
+    for idx, (vrf, af) in enumerate(ordered):
+        mpls_exp[vrf] = num_vrfs - idx
+
 
     for index, row in ip_data.iterrows():
+
         vrf = row["vrf"]
         vlan = row["vlan"]
-        pri_afxx = row["pri-afxx"]
+        pri_afxx = int(row["pri-afxx"])
         pri_num = row["pri-1-10"]
-        top_num = str(pri_afxx)[0]
+
+        mpls_exp_num = mpls_exp[vrf]
 
         if tot_pri_num == 0:
             pri_prc = 0
         else:
-            pri_prc = int((pri_num / tot_pri_num)*max_prc)
+            pri_prc = int(
+                (pri_num / tot_pri_num) * max_prc
+            )
 
         intf = row["interface"]
-        sub = True if intf_nums.count(intf) > 1 else False
+
+        sub = intf_nums.count(intf) > 1
 
         ip_address = row["address min"]
         mask = row["mask"]
 
+        # NETWORK INFO
+
         if "interfaces" not in my_data["network_info"]:
             my_data["network_info"]["interfaces"] = {}
 
-        my_data["network_info"]["interfaces"][
-            f"{intf_prefix}{intf}.{vlan}" if sub else f"{intf_prefix}{intf}"
-        ] = {
+        interface_name = (
+            f"{intf_prefix}{intf}.{vlan}"
+            if sub
+            else f"{intf_prefix}{intf}"
+        )
+
+        my_data["network_info"]["interfaces"][interface_name] = {
             "vrf": vrf,
             "vlan": vlan,
             "interface": intf,
@@ -190,92 +243,136 @@ def create_interface(ip_data, intf_prefix):
             "mask": mask,
             "pri_afxx": pri_afxx,
             "pri_num": pri_num,
+            "mpls_exp": mpls_exp_num,
         }
+
+        # INTERFACE CONFIG
 
         intf_s = []
 
         if sub:
-            intf_s.append(f"encapsulation dot1Q {vlan}")
+            intf_s.append(
+                f"encapsulation dot1Q {vlan}"
+            )
 
-            if f"interface {intf_prefix}{intf}.{999}" not in my_data["config"]:
-                my_data["config"][
-                    f"interface {intf_prefix}{intf}.{999}" if sub
-                    else f"interface {intf_prefix}{intf}"
-                ] = [
+            native_interface = (
+                f"interface {intf_prefix}{intf}.999"
+            )
+
+            if native_interface not in my_data["config"]:
+                my_data["config"][native_interface] = [
                     "description Sub-interface for ubrukt natiiv VLAN",
                     "encapsulation dot1Q 999 native",
                     "no ip address",
                     "no shutdown",
-                    "exit"
+                    "exit",
                 ]
 
-        intf_s.append(f"ip vrf forwarding {vrf}")
-        intf_s.append(f"ip address {ip_address} {mask}")
+        intf_s.append(
+            f"ip vrf forwarding {vrf}"
+        )
+
+        intf_s.append(
+            f"ip address {ip_address} {mask}"
+        )
+
         intf_s.append("no shutdown")
         intf_s.append("exit")
 
         my_data["config"][
-            f"interface {intf_prefix}{intf}.{vlan}" if sub
-            else f"interface {intf_prefix}{intf}"
+            f"interface {interface_name}"
         ] = intf_s
 
+        # QoS
 
         if sub:
-            my_data["config"][f"class-map match-any QRS-MARK-{vrf}"] = [
+
+            # LAN-side:
+            # VLAN -> DSCP
+            my_data["config"][
+                f"class-map match-any QRS-MARK-{vrf}"
+            ] = [
                 f"match vlan {vlan}",
-                "exit"
+                "exit",
             ]
 
-            my_data["config"][f"class-map match-any QRS-{vrf}"] = [
-                f"match mpls experimental topmost {top_num}",
-                "exit"
+            # WAN/MPLS-side:
+            # Match den DSCP-verdien vi satte på LAN-siden.
+            my_data["config"][
+                f"class-map match-any QRS-{vrf}"
+            ] = [
+                f"match dscp af{pri_afxx}",
+                "exit",
             ]
 
-            if f"policy-map QRS-SITE-MARK-POLICY" not in pol_maps:
-                pol_maps[f"policy-map QRS-SITE-MARK-POLICY"] = []
+            if "policy-map QRS-SITE-MARK-POLICY" not in pol_maps:
+                pol_maps[
+                    "policy-map QRS-SITE-MARK-POLICY"
+                ] = []
 
-            if f"policy-map QRS-SITE-POLICY" not in pol_maps:
-                pol_maps[f"policy-map QRS-SITE-POLICY"] = []
+            if "policy-map QRS-SITE-POLICY" not in pol_maps:
+                pol_maps[
+                    "policy-map QRS-SITE-POLICY"
+                ] = []
 
-
-            pol_maps[f"policy-map QRS-SITE-MARK-POLICY"].append(
+            # VLAN -> DSCP
+            pol_maps[
+                "policy-map QRS-SITE-MARK-POLICY"
+            ].append(
                 {
                     f"class QRS-MARK-{vrf}": [
-                        f"set dscp af{pri_afxx}", 
-                        "exit"
+                        f"set dscp af{pri_afxx}",
+                        "exit",
                     ]
-                }   
+                }
             )
 
-            pol_maps[f"policy-map QRS-SITE-POLICY"].append(
+            # DSCP -> MPLS EXP + bandwidth
+            pol_maps[
+                "policy-map QRS-SITE-POLICY"
+            ].append(
                 {
                     f"class QRS-{vrf}": [
-                        f"bandwidth percent {pri_prc}", 
-                        "exit"
+                        f"bandwidth percent {pri_prc}",
+                        f"set mpls experimental imposition {mpls_exp_num}",
+                        "exit",
                     ]
-                }   
+                }
             )
-            
 
-    intf_s = []
-    intf_s.append("no shutdown")
-    intf_s.append("exit")
-    my_data["config"][f"interface {intf_prefix}{intf}"] = intf_s
-    
-    if f"policy-map QRS-SITE-MARK-POLICY" in pol_maps:
+
+    lan_interface = ip_data.iloc[0]["interface"]
+
+    my_data["config"][
+        f"interface {intf_prefix}{lan_interface}"
+    ] = [
+        "no shutdown",
+        "exit",
+    ]
+
+    # APPLY POLICIES
+
+    if "policy-map QRS-SITE-MARK-POLICY" in pol_maps:
+
         my_data["config"].update(pol_maps)
-        
-        my_data["config"][f"\ninterface {intf_prefix}{intf}"] = [
+
+        my_data["config"][
+            f"\ninterface {intf_prefix}{lan_interface}"
+        ] = [
             "service-policy input QRS-SITE-MARK-POLICY",
-            "exit"
+            "exit",
         ]
 
-    if f"policy-map QRS-SITE-POLICY" in pol_maps:
+    if "policy-map QRS-SITE-POLICY" in pol_maps:
+
         my_data["config"].update(pol_maps)
-        
-        my_data["config"][f"\ninterface {intf_prefix}1"] = [
+
+        # Provider/MPLS-facing interface
+        my_data["config"][
+            f"\ninterface {intf_prefix}1"
+        ] = [
             "service-policy output QRS-SITE-POLICY",
-            "exit"
+            "exit",
         ]
 
     return my_data
@@ -491,7 +588,7 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
     return config, ipsec_profile, sites_data
 
 
-def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
+def create_tunnel_config(tunnel_data, vrf_data, sites_data: dict, is_hub: bool, sn):
     my_data = {}
     my_data["network_info"] = {}
     my_data["config"] = {}
@@ -508,13 +605,41 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
         ip_address = row["ip address"]
         mask = row["mask"]
         vrf = row["vrf"]
-        source = row["source"]
         network_id = row["network-id"]
 
         ipsec_enabled = is_true(row.get("ipsec", False))
 
+        # Bruk den eksisterende loopbacken som allerede tilhører VRF-en.
+        # Eksempel: UNET -> Loopback30 / 1.1.1.30.
+        vrf_match = vrf_data[vrf_data["vrf"] == vrf]
+        if vrf_match.empty:
+            raise ValueError(
+                f"Tunnel {tunnel}: fant ikke VRF '{vrf}' i vrf_data"
+            )
+
+        vrf_row = vrf_match.iloc[0]
+        source_loopback = int(vrf_row["loopback"])
+        source = str(vrf_row["laddr"]).strip()
+
+        if not source:
+            raise ValueError(
+                f"Tunnel {tunnel}: VRF '{vrf}' mangler loopback-adresse (laddr)"
+            )
+
+        # Dersom Excel fortsatt har en 'source'-kolonne, valider at den peker på
+        # samme allerede eksisterende VRF-loopback. Kolonnen kan også stå tom.
+        excel_source = row.get("source", "")
+        if not pd.isna(excel_source) and str(excel_source).strip():
+            excel_source = str(excel_source).strip()
+            if excel_source != source:
+                raise ValueError(
+                    f"Tunnel {tunnel}: source i tunnel-tabellen er {excel_source}, "
+                    f"men VRF {vrf} bruker eksisterende Loopback{source_loopback} "
+                    f"med adresse {source}"
+                )
+
         # Valgfri egen PSK per tunnel.
-        # om kollone tom brukes DEFAULT_IPSEC_PSK.
+        # Om kolonnen er tom brukes DEFAULT_IPSEC_PSK.
         psk = row.get("ipsec key", DEFAULT_IPSEC_PSK)
         if pd.isna(psk) or str(psk).strip() == "":
             psk = f"{DEFAULT_IPSEC_PSK}-{network_id}"
@@ -523,15 +648,6 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
 
         if mode != "multipoint" and "destination" in row.index:
             destination = row["destination"]
-
-        source = str(ipaddress.ip_address(source) + network_id + 1)
-        my_data["config"][f"interface loopback{network_id + 1}"] = [
-            f"description Loopback interface for tunnel/ipsec {tunnel}",
-            f"ip address {source} 255.255.255.255",
-            "ip ospf 1 area 0",
-            "no shutdown",
-            "exit",
-        ]
 
         tunnel_info = {
             "is hub": is_hub,
@@ -550,7 +666,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
         tun_s.append(f"ip vrf forwarding {vrf}")
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
-        tun_s.append(f"tunnel source loopback{network_id + 1}")
+        tun_s.append(f"tunnel source loopback{source_loopback}")
         tun_s.append(f"tunnel vrf {vrf}")
 
         if mode == "multipoint":
@@ -628,10 +744,6 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
             if isinstance(net, tuple):
                 network, mask, wild = net
                 tun_vrf_s.append(f"network {network} {wild}")
-
-        vrf_laddr = vrf_data[vrf_data["vrf"] == vrf].iloc[0].get("laddr", "")
-        if vrf_laddr:
-            tun_vrf_s.append(f"network {vrf_laddr} 0.0.0.0")
 
         tun_vrf_s.append("")
         tun_vrf_s.append("af-interface default")
@@ -1081,7 +1193,7 @@ def configure_site(sheet_file, config_file, sheet):
     my_data["config"].update(d_bgp["config"])
 
     #TUNNEL
-    d_tunnel, data = create_tunnel_config(tunnel_data, data, is_hub, sn)
+    d_tunnel, data = create_tunnel_config(tunnel_data, vrf_data, data, is_hub, sn)
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
