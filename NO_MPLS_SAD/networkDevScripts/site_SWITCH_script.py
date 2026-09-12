@@ -518,10 +518,15 @@ def global_config(md, md_top, swi_data, is_hub):
             "exit",
         ]
 
+<<<<<<< HEAD
         sw_cfg[f"interface {intf_prefix}{plan['mgmt_port']}"] = [
             f"description Dedicated management access port for VLAN {mgmt_vlan}",
             # Trusted: physically controlled infra port for statically addressed mgmt hosts
             # (e.g. the TACACS/Rsyslog server), which have no DHCP snooping binding for DAI to check.
+=======
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}1"] = [
+            f"description Management interface for VLAN {mgmt_vlan}",
+>>>>>>> f44561456658fa104e20256303069e22ca5c162f
             "ip arp inspection trust",
             "switchport mode access",
             f"switchport access vlan {mgmt_vlan}",
@@ -574,9 +579,14 @@ def config_vlan(swi_data, site, md, is_hub):
             if count <= 0:
                 continue
 
+<<<<<<< HEAD
             ports = list(range(current_port, current_port + count))
             current_port += count
             key = _interface_key(intf_prefix, ports)
+=======
+            rng = f"{made + 2}-{made + antall+1}" if antall > 1 else f"{made + 2}"
+            range_or_not = "range " if antall > 1 else "" 
+>>>>>>> f44561456658fa104e20256303069e22ca5c162f
 
             port_cfg = [
                 f"description access port for VLAN {vlan}",
@@ -688,6 +698,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, is_hub):
             )
             first_downlink_channel = 1
 
+<<<<<<< HEAD
         # DOWNLINKS:
         # Channel-group numbers are local. SW1 starts with Po1. On downstream
         # switches Po1 is reserved for the uplink, so their downlinks start at Po2.
@@ -706,6 +717,39 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, is_hub):
                     f"{','.join(map(str, downlink_vlans))}",
                     trusted=False,
                 )
+=======
+        
+
+       
+        if mgmg_vlan not in vlans:
+            vlans.insert(0, mgmg_vlan)
+            
+        intf_prefix = row["intf_prefix"]
+        num_ports = row["num_ports"]
+        if type(num_ports) is not int:
+            num_ports = int(num_ports)
+
+        if f"SW{sw_id}-SITE-{site}" not in info["config"]:
+            info["config"][f"SW{sw_id}-SITE-{site}"] = {}
+
+        to_lan = num_ports - 1
+        to_core = num_ports - 0
+        
+        vlans.append(999)
+        
+        global isp_added
+        
+        if not isp_added:
+            try:
+                isp_vlan = md.iloc[0]["ISP-VLAN"]
+                if type(isp_vlan) is not int:
+                    isp_vlan = int(isp_vlan)
+                vlans_for_dhcp_snooping = [vlan for vlan in vlans if vlan != isp_vlan]
+            except Exception as e:
+                vlans_for_dhcp_snooping = vlans
+
+            isp_added = True
+>>>>>>> f44561456658fa104e20256303069e22ca5c162f
         else:
             for idx, ports in enumerate(plan["downlink_groups"], start=1):
                 sw_cfg[_interface_key(intf_prefix, ports)] = _trunk_config(
@@ -715,6 +759,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, is_hub):
                     trusted=False,
                 )
 
+<<<<<<< HEAD
         # New num_ports_tot model: skipped ports are real physical interfaces,
         # so explicitly blackhole/shut them instead of leaving them in VLAN 1.
         if plan["skipped_physical_ports"]:
@@ -722,6 +767,52 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, is_hub):
                 "description UBRUKT - SKIPPED/RESERVED",
                 "switchport mode access",
                 "switchport access vlan 999",
+=======
+
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping"] = []
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip dhcp snooping vlan {','.join(map(str, vlans_for_dhcp_snooping))}"] = []
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"no ip dhcp snooping information option"] = []
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"ip arp inspection vlan {','.join(map(str, vlans_for_dhcp_snooping))}"] = []
+
+        info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_core}"] = [
+            f"description uplink trunk port for VLAN {','.join(map(str, vlans))}",
+            "switchport trunk encapsulation dot1q",
+            "switchport trunk native vlan 999",
+            "switchport mode trunk",
+            f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
+            f"ip dhcp snooping trust",
+            f"ip arp inspection trust",
+            "no shutdown",
+            "exit"
+        ]
+
+        num_down_ports = row["num_downlink"]
+        # print(type(num_down_ports))
+        # exit()
+        for i in range(num_down_ports):
+            info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {intf_prefix}{to_lan - i}"] = [
+                f"description downlink trunk port for VLAN {','.join(map(str, vlans))}. OM ikke brukt skal det brukes shutdown på porten",
+                "switchport trunk encapsulation dot1q",
+                "switchport trunk native vlan 999",
+                "switchport mode trunk",
+                f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
+                f"ip dhcp snooping trust",
+                f"ip arp inspection trust",
+                "no shutdown",
+                "exit"
+            ]
+    
+        ports_left = num_ports - tot_antall_port - 2 - num_down_ports
+        if ports_left > 0:
+            start_int = tot_antall_port + 1
+            end_int = num_ports - 2 - num_down_ports + 1 
+            range_or_not = "range " if start_int != end_int else ""
+
+            rng = f"{start_int}-{end_int}" if start_int != end_int else f"{start_int}"
+
+            info["config"][f"SW{sw_id}-SITE-{site}"][f"interface {range_or_not}{intf_prefix}{rng}"] = [
+                f"description ubrukt port access ports",
+>>>>>>> f44561456658fa104e20256303069e22ca5c162f
                 "shutdown",
                 "exit",
             ]
