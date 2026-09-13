@@ -1,9 +1,0 @@
-\babel@toc {norsk}{}\relax 
-\contentsline {section}{\numberline {1}Innledning}{1}{section.1}%
-\contentsline {section}{\numberline {2}Teori}{2}{section.2}%
-\contentsline {section}{\numberline {3}Gjennomføring og resultater}{3}{section.3}%
-\contentsline {section}{\numberline {4}Diskusjon}{4}{section.4}%
-\contentsline {section}{\numberline {5}Veien videre}{5}{section.5}%
-\contentsline {section}{\numberline {6}Konklusjon}{6}{section.6}%
-\contentsline {section}{Referanser}{7}{section*.1}%
-\contentsline {section}{Vedlegg}{8}{section*.2}%
