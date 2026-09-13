@@ -533,6 +533,7 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         - skipped physical ports
         - 1 dedicated MGMT port
         - optional 1 local SPAN/RSPAN IDS destination port
+        - optional 1 ERSPAN sensor access port on the HUB SW1
         - access ports from low to high
         - exactly 1 physical uplink to the site router
         - num_downlink * etherchan_num ports for switch-to-switch downlinks
@@ -547,6 +548,10 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
     This matches the Excel capacity logic:
       SW1:  ports - skipped - MGMT - local_monitor_port? - router_uplink(1)
             - num_downlink * etherchan_num
+
+      ERSPAN:
+        - no local monitor port is needed on normal source switches
+        - HUB SW1 reserves one access port for the central ERSPAN sensor
       SW2+: ports - skipped - MGMT
             - (1 + num_downlink) * etherchan_num
     """
@@ -595,16 +600,27 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
 
     mgmt_port = first_usable
 
-    # SPAN/RSPAN need one local IDS destination port on SW1.
-    # ERSPAN is IP-based and therefore does not reserve a physical sensor port.
-    span_mode = _get_span_mode(md)      
+    # Local sensor-port rules:
+    #   SPAN/RSPAN -> SW1 needs one local IDS destination port.
+    #   ERSPAN     -> source switches do not need a physical destination port,
+    #                 but HUB SW1 reserves one access port for the central
+    #                 ERSPAN/IDS sensor in the MONITORING VLAN.
+    span_mode = _get_span_mode(md)
     if span_mode == "RSPAN" and len(swi_data) < 2:
         raise ValueError(
             f"Site {site}: RSPAN krever minst en downstream-switch. "
             "Sitet har bare SW1; bruk SPAN i stedet."
         )
-    span_port_required = is_primary_switch and span_mode in {"SPAN", "RSPAN"}
-    dedicated_ports = 1 + (1 if span_port_required else 0)  # MGMT (+ local sensor port)
+
+    local_sensor_port_required = (
+        is_primary_switch
+        and (
+            span_mode in {"SPAN", "RSPAN"}
+            or (span_mode == "ERSPAN" and is_hub)
+        )
+    )
+
+    dedicated_ports = 1 + (1 if local_sensor_port_required else 0)  # MGMT (+ sensor)
 
     # SW1 has one physical router uplink. Downstream switches use an
     # EtherChannel-sized uplink toward their upstream switch.
@@ -617,12 +633,12 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         uplink_desc = "1 router-uplink" if is_primary_switch else f"{etherchan_ports}-ports uplink"
         raise ValueError(
             f"SW{sw_id}: ikke nok porter. {usable_count} brukbare porter, men "
-            f"MGMT{' + monitor-port' if span_port_required else ''} + {uplink_desc} + "
+            f"MGMT{' + sensor-port' if local_sensor_port_required else ''} + {uplink_desc} + "
             f"downlinks krever {dedicated_ports + trunk_member_count} porter."
         )
 
-    span_port = mgmt_port + 1 if span_port_required else None
-    first_access_port = mgmt_port + 1 + (1 if span_port_required else 0)
+    span_port = mgmt_port + 1 if local_sensor_port_required else None
+    first_access_port = mgmt_port + 1 + (1 if local_sensor_port_required else 0)
     last_access_port = first_access_port + available_access_slots - 1
 
     # Reserve uplink at the highest interface numbers.
@@ -665,6 +681,7 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         "skipped_physical_ports": skipped_physical_ports,
         "mgmt_port": mgmt_port,
         "span_port": span_port,
+        "sensor_port": span_port,
         "span_mode": span_mode,
         "first_access_port": first_access_port,
         "last_access_port": last_access_port,
@@ -858,6 +875,28 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
             "no shutdown",
             "exit",
         ]
+
+        # The central ERSPAN sensor is connected locally on HUB SW1.
+        # This port is deliberately placed immediately after the dedicated MGMT
+        # port by the port-plan (e.g. MGMT=g0/1 -> sensor=g0/2).
+        if (
+            span_mode_site == "ERSPAN"
+            and is_hub
+            and plan["is_primary_switch"]
+            and plan["sensor_port"] is not None
+        ):
+            sw_cfg[f"interface {intf_prefix}{plan['sensor_port']}"] = [
+                "description Dedicated ERSPAN IDS/IPS sensor access port",
+                "switchport mode access",
+                f"switchport access vlan {monitoring['vlan']}",
+                "switchport port-security",
+                "switchport port-security maximum 2",
+                "switchport port-security violation restrict",
+                "spanning-tree bpduguard enable",
+                "spanning-tree portfast",
+                "no shutdown",
+                "exit",
+            ]
 
         span_mode = plan["span_mode"]
         span_vlans = _ordered_unique([mgmt_vlan, *[v for v, _ in plan["vlan_info"]]])
