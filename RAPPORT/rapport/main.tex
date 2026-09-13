@@ -1,0 +1,66 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{preamble}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float} 
+\usepackage{amsmath}
+\usepackage{tabularx}
+\usepackage[utf8]{inputenc}
+\usepackage[europeanresistors]{circuitikz}
+
+% ------ Metadata ------
+\newcommand{\institution}{FHS/Cyberingeniørskolen}
+\newcommand{\laboratory}{Elektronikklaboratoriet}
+\newcommand{\coursecode}{ING2509 \; Elektronikk}
+\newcommand{\assignmenttype}{PROSJEKTRAPPORT}
+\newcommand{\assignmenttitle}{1-bit ALU}
+\newcommand{\studentname}{Yonatan Moknen Abay}
+\newcommand{\partnername}{}
+\newcommand{\class}{VING 78}
+\newcommand{\labdate}{26. mars 2026}
+\newcommand{\submissiondate}{\today}  
+
+\begin{document}
+
+\input{frontpage}
+
+\pagenumbering{Roman}
+\setcounter{page}{1}
+
+\input{sections/sammendrag}
+\clearpage
+
+\tableofcontents
+\clearpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{sections/innledning}
+\clearpage
+
+\input{sections/teori}
+\clearpage
+
+\input{sections/gjennomforing}
+\clearpage
+
+\input{sections/diskusjon}
+\clearpage
+
+\input{sections/veienvidere.tex}
+\clearpage
+
+\input{sections/konklusjon}
+\clearpage
+
+\phantomsection
+\printbibliography[heading=bibintoc,title={Referanser}]
+\clearpage
+
+\phantomsection
+\section*{Vedlegg}
+\addcontentsline{toc}{section}{Vedlegg}
+\input{sections/vedlegg}
+
+\end{document}

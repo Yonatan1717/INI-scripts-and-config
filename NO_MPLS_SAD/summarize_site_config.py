@@ -358,10 +358,41 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
     if mgmt_port:
         lines.append(f"    Dedikert MGMT-port: {mgmt_port}")
 
-    if span_port:
+    # Monitoring mode summary: local SPAN, site-local RSPAN, or ERSPAN.
+    erspan_key = next(
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "type erspan-source" in str(k).lower()),
+        None,
+    )
+    rspan_source = next(
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "source remote vlan" in str(k).lower()),
+        None,
+    )
+    rspan_destination = next(
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "destination remote vlan" in str(k).lower()),
+        None,
+    )
+
+    if erspan_key:
+        erspan_cfg = config.get(erspan_key, [])
+        dst = get_line_value(erspan_cfg, "ip address ") or "ukjent"
+        erspan_id = get_line_value(erspan_cfg, "erspan-id ") or "ukjent"
+        origin = get_line_value(erspan_cfg, "origin ip-address ") or "ukjent"
+        erspan_vrf = get_line_value(erspan_cfg, "vrf ") or "global"
+        lines.append(
+            f"    Overvåking: ERSPAN | VRF {erspan_vrf} | origin {origin} | "
+            f"destination {dst} | ERSPAN-ID {erspan_id}"
+        )
+    elif rspan_source:
+        vlan = rspan_source.lower().split("source remote vlan", 1)[1].strip()
+        port_text = f" | IDS-port {span_port}" if span_port else ""
+        lines.append(f"    Overvåking: RSPAN destination | VLAN {vlan}{port_text}")
+    elif rspan_destination:
+        vlan = rspan_destination.lower().split("destination remote vlan", 1)[1].strip()
+        lines.append(f"    Overvåking: RSPAN source | VLAN {vlan}")
+    elif span_port:
         source = first_config_key(config, "monitor session 1 source ")
         source_text = source.removeprefix("monitor session 1 source ") if source else "ukjent"
-        lines.append(f"    SPAN/IDS-port: {span_port} | kilde {source_text}")
+        lines.append(f"    Overvåking: SPAN | IDS-port {span_port} | kilde {source_text}")
 
     if access_entries:
         lines.append("    Accessporter:")

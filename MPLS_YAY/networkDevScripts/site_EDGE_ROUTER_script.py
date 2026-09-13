@@ -519,7 +519,7 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, psk=DEF
         peer_address = f"address {peer_source} 255.255.255.255"
         remotes.append(peer_address)
 
-        # Dersom én site i samme DMVPN-cloud mangler IPsec-konfig, er inputen
+        # Dersom en site i samme DMVPN-cloud mangler IPsec-konfig, er inputen
         # inkonsistent. Gi en tydelig feil i stedet for en KeyError.
         keyring_key = f"crypto ikev2 keyring {keyring}"
         profile_key = f"crypto ikev2 profile {ikev2_profile}"
@@ -882,7 +882,7 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     my_data["config"][
         f"username {username} privilege 15 secret 9 {password}"
     ] = []
-    my_data["config"]["crypto key generate rsa general-keys modulus 4096"] = []
+    my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
     
     

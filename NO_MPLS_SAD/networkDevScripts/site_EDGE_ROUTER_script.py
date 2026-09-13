@@ -653,7 +653,7 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     my_data["config"][
         f"username {username} privilege 15 secret 9 {password}"
     ] = []
-    my_data["config"]["crypto key generate rsa general-keys modulus 4096"] = []
+    my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
     
     

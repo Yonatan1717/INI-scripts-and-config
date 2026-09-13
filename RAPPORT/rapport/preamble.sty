@@ -1,0 +1,62 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{preamble}[2025/08/31 Rapport-preamble]
+
+% --- Grunnleggende ---
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[main=norsk,english]{babel}
+
+% --- Matematikk ---
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+
+% --- Skrifter og mikrotypografi ---
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% --- Grafikk og farger ---
+\usepackage{graphicx}
+\graphicspath{{Media/}}
+\usepackage[table]{xcolor}
+
+% --- Struktur og lister ---
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+% --- Litteratur ---
+\usepackage[backend=biber,style=ieee]{biblatex}
+\usepackage{csquotes}
+
+% --- Sideoppsett og enheter ---
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{siunitx}
+\sisetup{
+  number-unit-product={},
+  per-mode=symbol,
+  exponent-product=\cdot
+}
+
+% --- Innholdsfortegnelse og fysikknotasjon ---
+\usepackage{tocloft}
+\usepackage{physics}
+
+% --- Lenker (sist) ---
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=black,
+  citecolor=black
+}
+
+% --- Kollisjon \qty mellom physics og siunitx ---
+\usepackage{letltxmacro}
+\AtBeginDocument{\LetLtxMacro\qty\SI} % robust for pdfLaTeX-kjerner
+
+% --- Små justeringer ---
+\emergencystretch=1em
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\setlist{nosep}
+
+% --- Bibliografi-fil ---
+\addbibresource{referanser.bib}
