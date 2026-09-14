@@ -4,8 +4,8 @@ summarize_site_config.py
 
 Leser allerede genererte JSON-filer fra nettverksgeneratoren og skriver en
 brukervennlig oppsummering av en eller alle sites. Støtter både MPLS og
-NO-MPLS, inkludert SPAN/RSPAN/ERSPAN, MONITORING-SVI og eventuell dedikert
-Suricata/IDS-sensorport.
+NO-MPLS, inkludert SPAN/RSPAN/ERSPAN, MONITORING-SVI, ERSPAN source-ranges,
+IP Source Guard og eventuell dedikert Suricata/IDS-sensorport.
 
 Krever:
   - EDGE_ROUTER_configs.json
@@ -141,6 +141,18 @@ def get_line_value(lines: Any, prefix: str) -> str | None:
         if isinstance(line, str) and line.strip().lower().startswith(prefix_l):
             return line.strip()[len(prefix):].strip()
     return None
+
+
+def get_line_values(lines: Any, prefix: str) -> list[str]:
+    """Return all matching config lines, without the prefix."""
+    if not isinstance(lines, list):
+        return []
+    prefix_l = prefix.lower()
+    values = []
+    for line in lines:
+        if isinstance(line, str) and line.strip().lower().startswith(prefix_l):
+            values.append(line.strip()[len(prefix):].strip())
+    return values
 
 
 def detect_router_technologies(config: dict[str, Any], network_info: dict[str, Any]) -> list[str]:
@@ -438,10 +450,17 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         dst = get_line_value(cfg, "ip address ") or "ukjent"
         erspan_id = get_line_value(cfg, "erspan-id ") or "ukjent"
         origin = get_line_value(cfg, "origin ip-address ") or "ukjent"
+        source_interfaces = get_line_values(cfg, "source interface ")
+
         lines.append(
             f"    Overvåking: ERSPAN source | global routing | origin {origin} | "
             f"HUB destination {dst} | ERSPAN-ID {erspan_id}"
         )
+        if source_interfaces:
+            lines.append("    ERSPAN-kilder:")
+            for source in source_interfaces:
+                lines.append(f"      - {source}")
+
         route_prefix = f"ip route {dst} 255.255.255.255 "
         erspan_route = first_config_key(config, route_prefix)
         if erspan_route:
@@ -487,6 +506,12 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         security.append("DHCP snooping")
     if any(str(k).lower().startswith("ip arp inspection vlan ") for k in config):
         security.append("DAI")
+    if any(
+        isinstance(v, list)
+        and any(isinstance(line, str) and line.strip() == "ip verify source" for line in v)
+        for v in config.values()
+    ):
+        security.append("IP Source Guard")
     if any(isinstance(v, list) and "switchport port-security" in v for v in config.values()):
         security.append("Port-security")
     if any(isinstance(v, list) and "spanning-tree bpduguard enable" in v for v in config.values()):
