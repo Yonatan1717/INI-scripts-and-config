@@ -3,8 +3,9 @@
 summarize_site_config.py
 
 Leser allerede genererte JSON-filer fra nettverksgeneratoren og skriver en
-brukervennlig oppsummering av en eller alle sites, inkludert SPAN/RSPAN/ERSPAN,
-MONITORING-SVI og eventuell dedikert Suricata/IDS-sensorport.
+brukervennlig oppsummering av en eller alle sites. Støtter både MPLS og
+NO-MPLS, inkludert SPAN/RSPAN/ERSPAN, MONITORING-SVI og eventuell dedikert
+Suricata/IDS-sensorport.
 
 Krever:
   - EDGE_ROUTER_configs.json
@@ -297,8 +298,6 @@ def switch_vlans(config: dict[str, Any]) -> list[int]:
 def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
     lines = [f"  {sw_name}:"]
 
-    # Collect SVI information first so MGMT and MONITORING can be shown
-    # separately instead of assuming the first SVI is always management.
     svi_info: dict[str, str] = {}
     for key, value in config.items():
         match = re.fullmatch(r"interface\s+vlan\s+(\d+)", str(key).strip(), re.I)
@@ -309,11 +308,10 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
             svi_info[match.group(1)] = ip
 
     access_entries = []
-    mgmt_port = None
+    mgmt_ports = []
     mgmt_port_vlan = None
     span_port = None
     erspan_sensor_port = None
-    erspan_sensor_vlan = None
     uplinks = []
     downlinks = []
     port_channels = []
@@ -327,16 +325,20 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         access_vlan = get_line_value(cfg, "switchport access vlan ")
         display_if = re.sub(r"^interface\s+", "", str(key), flags=re.I)
 
-        if "dedicated management" in desc_l:
-            mgmt_port = display_if
-            mgmt_port_vlan = access_vlan
+        if (
+            "dedicated management" in desc_l
+            or "dedicated tacacs" in desc_l
+            or "dedicated syslog" in desc_l
+        ):
+            mgmt_ports.append((display_if, description, access_vlan))
+            if mgmt_port_vlan is None and access_vlan:
+                mgmt_port_vlan = access_vlan
 
         if "span destination" in desc_l or "rspan destination" in desc_l:
             span_port = display_if
 
-        if "erspan" in desc_l and "sensor" in desc_l and access_vlan:
+        if "security onion" in desc_l and "mirror destination" in desc_l:
             erspan_sensor_port = display_if
-            erspan_sensor_vlan = access_vlan
 
         if (
             access_vlan
@@ -375,23 +377,24 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         vlan, ip = sorted(svi_info.items(), key=lambda x: int(x[0]))[0]
         lines.append(f"    MGMT SVI: VLAN {vlan} = {ip}")
 
-    erspan_present = any(
-        str(k).lower().startswith("monitor session ")
-        and "type erspan-source" in str(k).lower()
-        for k in config
+    erspan_source_key = next(
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "type erspan-source" in str(k).lower()),
+        None,
     )
+    erspan_destination_key = next(
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "type erspan-destination" in str(k).lower()),
+        None,
+    )
+    erspan_present = bool(erspan_source_key or erspan_destination_key)
 
-    monitoring_vlan = erspan_sensor_vlan
-    if erspan_present and not monitoring_vlan:
+    monitoring_vlan = None
+    if erspan_present:
         for vlan in sorted(svi_info, key=int):
             if vlan != mgmt_vlan:
                 monitoring_vlan = vlan
                 break
-
     if monitoring_vlan and monitoring_vlan in svi_info:
-        lines.append(
-            f"    MONITORING SVI: VLAN {monitoring_vlan} = {svi_info[monitoring_vlan]}"
-        )
+        lines.append(f"    MONITORING SVI: VLAN {monitoring_vlan} = {svi_info[monitoring_vlan]}")
 
     gateway_key = first_config_key(config, "ip default-gateway ")
     if gateway_key:
@@ -405,65 +408,45 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
     if vlans:
         lines.append(f"    VLANs: {', '.join(map(str, vlans))}")
 
-    if mgmt_port:
-        lines.append(f"    Dedikert MGMT-port: {mgmt_port}")
+    for port, description, vlan in mgmt_ports:
+        suffix = f" | VLAN {vlan}" if vlan else ""
+        lines.append(f"    {description}: {port}{suffix}")
 
     if erspan_sensor_port:
-        vlan_text = f" | VLAN {erspan_sensor_vlan}" if erspan_sensor_vlan else ""
-        lines.append(
-            f"    Dedikert ERSPAN/Suricata-sensorport: {erspan_sensor_port}{vlan_text}"
-        )
+        lines.append(f"    Security Onion sniff/mirror-port: {erspan_sensor_port}")
 
-    erspan_key = next(
-        (
-            str(k)
-            for k in config
-            if str(k).lower().startswith("monitor session ")
-            and "type erspan-source" in str(k).lower()
-        ),
-        None,
-    )
     rspan_source = next(
-        (
-            str(k)
-            for k in config
-            if str(k).lower().startswith("monitor session ")
-            and "source remote vlan" in str(k).lower()
-        ),
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "source remote vlan" in str(k).lower()),
         None,
     )
     rspan_destination = next(
-        (
-            str(k)
-            for k in config
-            if str(k).lower().startswith("monitor session ")
-            and "destination remote vlan" in str(k).lower()
-        ),
+        (str(k) for k in config if str(k).lower().startswith("monitor session ") and "destination remote vlan" in str(k).lower()),
         None,
     )
 
-    if erspan_key:
-        erspan_cfg = config.get(erspan_key, [])
-        dst = get_line_value(erspan_cfg, "ip address ") or "ukjent"
-        erspan_id = get_line_value(erspan_cfg, "erspan-id ") or "ukjent"
-        origin = get_line_value(erspan_cfg, "origin ip-address ") or "ukjent"
-        erspan_vrf = get_line_value(erspan_cfg, "vrf ")
-
-        routing_text = f"VRF {erspan_vrf}" if erspan_vrf else "global routing"
-        sensor_text = f" | sensor-port {erspan_sensor_port}" if erspan_sensor_port else ""
+    if erspan_destination_key:
+        cfg = config.get(erspan_destination_key, [])
+        dst_ip = get_line_value(cfg, "ip address ") or "ukjent"
+        erspan_id = get_line_value(cfg, "erspan-id ") or "ukjent"
+        destination_interface = get_line_value(cfg, "destination interface ") or erspan_sensor_port or "ukjent"
         lines.append(
-            f"    Overvåking: ERSPAN | {routing_text} | origin {origin} | "
-            f"destination {dst} | ERSPAN-ID {erspan_id}{sensor_text}"
+            f"    Overvåking: ERSPAN destination | IP {dst_ip} | ERSPAN-ID {erspan_id} | "
+            f"ut {destination_interface} til Security Onion"
         )
-
+    elif erspan_source_key:
+        cfg = config.get(erspan_source_key, [])
+        dst = get_line_value(cfg, "ip address ") or "ukjent"
+        erspan_id = get_line_value(cfg, "erspan-id ") or "ukjent"
+        origin = get_line_value(cfg, "origin ip-address ") or "ukjent"
+        lines.append(
+            f"    Overvåking: ERSPAN source | global routing | origin {origin} | "
+            f"HUB destination {dst} | ERSPAN-ID {erspan_id}"
+        )
         route_prefix = f"ip route {dst} 255.255.255.255 "
         erspan_route = first_config_key(config, route_prefix)
         if erspan_route:
             next_hop = erspan_route[len(route_prefix):].strip()
-            lines.append(
-                f"    ERSPAN-rute: {dst}/32 via MONITORING-gateway {next_hop}"
-            )
-
+            lines.append(f"    ERSPAN-rute: {dst}/32 via MONITORING-gateway {next_hop}")
     elif rspan_source:
         vlan = rspan_source.lower().split("source remote vlan", 1)[1].strip()
         port_text = f" | IDS-port {span_port}" if span_port else ""

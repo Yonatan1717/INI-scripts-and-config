@@ -13,10 +13,8 @@ DEFAULT_SKIPPED_PORTS = 0
 DEFAULT_RSPAN_VLAN = 900
 VALID_SPAN_MODES = {"SPAN", "RSPAN", "ERSPAN"}
 MONITORING_VRF = "MONITORING"
+DEFAULT_ERSPAN_ID = 100
 REQUIRE_MONITORING_TUNNEL_FOR_ERSPAN = True
-
-have_asked_rsyslog_server = False
-have_asked_tacacs_server = False
 
 
 def _clean_header(value):
@@ -179,6 +177,74 @@ def _interface_key(prefix, ports):
     return f"interface range {prefix}{ports[0]} - {ports[-1]}"
 
 
+def _source_interface_ranges(ports, intf_prefix, direction="rx"):
+    """Compress physical interface numbers into Cisco monitor-session ranges.
+
+    Examples:
+      [1]       -> source interface g0/1 rx
+      [1,2,3]   -> source interface g0/1 - 3 rx
+      [1,2,5,6] -> source interface g0/1 - 2 rx
+                   source interface g0/5 - 6 rx
+    """
+    ports = sorted(set(int(p) for p in ports))
+    if not ports:
+        return []
+
+    lines = []
+    run_start = ports[0]
+    run_end = ports[0]
+
+    def emit(start, end):
+        if start == end:
+            return f"source interface {intf_prefix}{start} {direction}"
+        return f"source interface {intf_prefix}{start} - {end} {direction}"
+
+    for port in ports[1:]:
+        if port == run_end + 1:
+            run_end = port
+            continue
+
+        lines.append(emit(run_start, run_end))
+        run_start = run_end = port
+
+    lines.append(emit(run_start, run_end))
+    return lines
+
+
+def _erspan_source_interface_lines(plan, intf_prefix):
+    """Build low-duplication ERSPAN sources for one switch.
+
+    - Client traffic is mirrored only when it ENTERS a client access port (rx).
+      The same frame is therefore not mirrored again while traversing
+      switch-to-switch trunks.
+    - Contiguous client access ports are emitted as a Cisco source-interface
+      range to keep the generated configuration compact.
+    - On SW1 at a spoke site, the router-facing uplink is also mirrored rx.
+      This captures traffic entering the LAN from the router/WAN, so Suricata
+      still sees both directions of routed client flows.
+    - MGMT/server ports, monitoring/sensor ports, downlinks, unused ports and
+      downstream-switch uplinks are deliberately excluded.
+    """
+    lines = []
+
+    # Access ports are allocated contiguously in the current port model, but
+    # use the generic range helper so the output also stays correct if gaps are
+    # introduced later.
+    access_start = plan["first_access_port"]
+    access_ports = list(
+        range(access_start, access_start + plan["allocated_access_ports"])
+    )
+    lines.extend(_source_interface_ranges(access_ports, intf_prefix, "rx"))
+
+    # SW1 has exactly one physical router-facing uplink in this architecture.
+    # Keep it separate from the access-port range even if interface numbers
+    # happen to be adjacent: it has a different monitoring purpose.
+    if plan["is_primary_switch"]:
+        lines.extend(_source_interface_ranges(plan["uplink_ports"], intf_prefix, "rx"))
+
+    return lines
+
+
 def _get_isp_vlan(md):
     if not md.empty:
         value = _value(md.iloc[0], ["ISP-VLAN", "isp_vlan", "ISP VLAN"], None)
@@ -250,26 +316,37 @@ def _get_rspan_vlan(md):
     return vlan
 
 
-def _get_erspan_destination(md):
-    """ERSPAN destination must be explicitly configured in Excel."""
-    if md.empty:
-        raise ValueError("span_mode=ERSPAN krever erspan_destination i Excel.")
+def _get_management_server_ip(md_top, names, label):
+    """Read and validate a management-service IP from the top Excel metadata."""
+    if md_top is None or md_top.empty:
+        raise ValueError(f"{label}-server mangler i Excel-metadata.")
 
-    value = _value(
-        md.iloc[0],
-        ["erspan_destination", "erspan destination", "span_destination", "monitor_destination"],
-        None,
-    )
+    value = _value(md_top.iloc[0], names, None)
     if value is None:
         raise ValueError(
-            "span_mode=ERSPAN krever feltet erspan_destination i switch-metadata. "
-            "ERSPAN får ikke bruke TACACS/MGMT-adressen som automatisk fallback."
+            f"{label}-server mangler i Excel. Forventet felt: {names[0]}."
         )
 
     try:
         return str(ipaddress.ip_address(str(value).strip()))
     except ValueError as exc:
-        raise ValueError(f"Ugyldig ERSPAN-destinasjon: {value}") from exc
+        raise ValueError(f"Ugyldig {label}-server-IP i Excel: {value}") from exc
+
+
+def _get_tacacs_server_ip(md_top):
+    return _get_management_server_ip(
+        md_top,
+        ["tacacs_server_ip", "tacacs server ip", "tacacs_server"],
+        "TACACS",
+    )
+
+
+def _get_syslog_server_ip(md_top):
+    return _get_management_server_ip(
+        md_top,
+        ["syslog_server_ip", "rsyslog_server_ip", "syslog server ip", "syslog_server"],
+        "Syslog",
+    )
 
 
 def _find_vrf_rows(df, vrf_name):
@@ -280,24 +357,46 @@ def _find_vrf_rows(df, vrf_name):
 
 
 def _get_monitoring_service(ip_data, vrf_data, site):
-    """Validate MONITORING in Excel and return its VLAN/subnet data.
+    """Return the MONITORING service definition used by ERSPAN.
 
-    MONITORING must exist as a VRF in the router design/Excel, but the switch
-    itself keeps the MONITORING SVI in the global routing table.
+    NO-MPLS requires an explicit MONITORING VRF/IP row because it also needs
+    Tunnel50/DMVPN transport.  MPLS can derive the fixed reference-architecture
+    MONITORING network automatically when those rows are absent:
+      Site N -> VLAN 50, 10.(50+N).0.0/24, gateway .1.
     """
     vrf_rows = _find_vrf_rows(vrf_data, MONITORING_VRF)
     ip_rows = _find_vrf_rows(ip_data, MONITORING_VRF)
 
-    if vrf_rows.empty:
-        raise ValueError(
-            f"Site {site}: span_mode=ERSPAN krever VRF '{MONITORING_VRF}' "
-            "i Excel sin VRF-tabell for router-transport. VRF-en opprettes ikke på switchene."
-        )
-    if ip_rows.empty:
+    if vrf_rows.empty or ip_rows.empty:
+        if not REQUIRE_MONITORING_TUNNEL_FOR_ERSPAN:
+            try:
+                site_no = int(float(site))
+                second_octet = 50 + site_no
+                if not 0 <= second_octet <= 255:
+                    raise ValueError
+                network = ipaddress.ip_network(f"10.{second_octet}.0.0/24")
+                return {
+                    "vrf": MONITORING_VRF,
+                    "vlan": 50,
+                    "mask": "255.255.255.0",
+                    "gateway": str(network.network_address + 1),
+                    "network": network,
+                }
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Site {site}: kunne ikke utlede MONITORING-nett automatisk for MPLS."
+                ) from exc
+
+        if vrf_rows.empty:
+            raise ValueError(
+                f"Site {site}: span_mode=ERSPAN krever VRF '{MONITORING_VRF}' "
+                "i Excel sin VRF-tabell for NO-MPLS router-transport."
+            )
         raise ValueError(
             f"Site {site}: span_mode=ERSPAN krever en egen VLAN/subnett-rad med "
             f"vrf={MONITORING_VRF} i IP-tabellen."
         )
+
     if len(vrf_rows) != 1 or len(ip_rows) != 1:
         raise ValueError(
             f"Site {site}: ERSPAN forventer nøyaktig en {MONITORING_VRF}-rad i "
@@ -361,88 +460,172 @@ def _get_switch_monitoring_ip(row, monitoring, site, sw_id):
 
 
 def _validate_erspan_architecture_for_workbook(file, sheets):
-    """Fail fast if ERSPAN would use MGMT or lacks dedicated monitoring transport."""
-    monitoring_networks = {}
-    mgmt_networks = {}
-    destinations = {}
+    """Validate ERSPAN and derive the destination from HUB SW1 MONITORING IP.
+
+    The user does not enter an ERSPAN destination manually.  In ERSPAN mode,
+    HUB SW1 terminates the GRE/ERSPAN stream and forwards the decapsulated
+    mirrored frames out its dedicated physical monitor destination port.
+    """
+    records = []
+    hubs = []
     active_erspan_sites = set()
 
-    # First collect every site's MGMT/MONITORING networks so remote destinations
-    # can be validated against the whole workbook.
     for sheet in sheets:
         sheet_data = read_sheet(file, sheet)
         md = sheet_data["md"]
+        md_top = sheet_data["md_top"]
         site = _site_id(md.iloc[0]["site"])
         ip_data = sheet_data.get("ip_data")
         vrf_data = sheet_data.get("vrf_data")
         tunnel_data = sheet_data.get("tunnel_data")
         mode = _get_span_mode(md)
+        is_hub = _is_hub_site(md, md_top, site)
 
-        mgmt_rows = _find_vrf_rows(ip_data, "MGMT")
-        if not mgmt_rows.empty:
-            r = mgmt_rows.iloc[0]
-            try:
-                mgmt_networks[site] = ipaddress.ip_network(
-                    f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
-                )
-            except (ValueError, TypeError, KeyError):
-                pass
+        record = {
+            "sheet": sheet,
+            "site": site,
+            "data": sheet_data,
+            "mode": mode,
+            "is_hub": is_hub,
+        }
+        records.append(record)
+        if is_hub:
+            hubs.append(record)
+        if mode == "ERSPAN":
+            active_erspan_sites.add(site)
 
-        mon_rows = _find_vrf_rows(ip_data, MONITORING_VRF)
-        if not mon_rows.empty:
-            r = mon_rows.iloc[0]
-            try:
-                monitoring_networks[site] = ipaddress.ip_network(
-                    f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
-                )
-            except (ValueError, TypeError, KeyError):
-                pass
+    if not active_erspan_sites:
+        return {
+            "active_sites": set(),
+            "hub_site": None,
+            "destination_ip": None,
+            "erspan_id": DEFAULT_ERSPAN_ID,
+        }
 
-        if mode != "ERSPAN":
+    if len(hubs) != 1:
+        raise ValueError(
+            f"ERSPAN krever nøyaktig ett HUB-site. Fant {len(hubs)} HUB-sites."
+        )
+
+    hub = hubs[0]
+    if hub["mode"] != "ERSPAN":
+        raise ValueError(
+            f"ERSPAN er aktivert på site(s) {sorted(active_erspan_sites)}, men HUB Site "
+            f"{hub['site']} har span_mode={hub['mode'] or 'OFF'}. HUB må også stå i ERSPAN."
+        )
+
+    hub_data = hub["data"]
+    hub_monitoring = _get_monitoring_service(
+        hub_data.get("ip_data"), hub_data.get("vrf_data"), hub["site"]
+    )
+    hub_sw1_rows = hub_data["swi_data"][
+        hub_data["swi_data"]["SW"].apply(_switch_id) == "1"
+    ]
+    if len(hub_sw1_rows) != 1:
+        raise ValueError(
+            f"HUB Site {hub['site']}: ERSPAN krever nøyaktig én SW1 i switch-tabellen."
+        )
+    destination = _get_switch_monitoring_ip(
+        hub_sw1_rows.iloc[0], hub_monitoring, hub["site"], "1"
+    )
+
+    # Destination must be the HUB SW1 MONITORING address and never a MGMT address.
+    mgmt_rows = _find_vrf_rows(hub_data.get("ip_data"), "MGMT")
+    if not mgmt_rows.empty:
+        r = mgmt_rows.iloc[0]
+        mgmt_net = ipaddress.ip_network(
+            f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
+        )
+        if ipaddress.ip_address(destination) in mgmt_net:
+            raise ValueError(
+                f"HUB SW1 ERSPAN-destinasjon {destination} ligger i MGMT-nettet {mgmt_net}."
+            )
+
+    # Validate every active site's MONITORING transport and unique switch origin IPs.
+    globally_seen_monitoring_ips = set()
+    for record in records:
+        if record["mode"] != "ERSPAN":
             continue
 
-        active_erspan_sites.add(site)
-        monitoring = _get_monitoring_service(ip_data, vrf_data, site)
-        monitoring_networks[site] = monitoring["network"]
-        destination = _get_erspan_destination(md)
-        destinations[site] = destination
+        site = record["site"]
+        sheet_data = record["data"]
+        monitoring = _get_monitoring_service(
+            sheet_data.get("ip_data"), sheet_data.get("vrf_data"), site
+        )
 
-        # Every ERSPAN source switch needs its own origin IP in MONITORING.
-        seen_ips = set()
         for _, sw_row in sheet_data["swi_data"].iterrows():
             sw_id = _switch_id(sw_row["SW"])
             mon_ip = _get_switch_monitoring_ip(sw_row, monitoring, site, sw_id)
-            if mon_ip in seen_ips:
+            if mon_ip in globally_seen_monitoring_ips:
                 raise ValueError(
-                    f"Site {site}: MONITORING ip {mon_ip} er brukt av flere switcher."
+                    f"MONITORING ip {mon_ip} er brukt av flere switcher i arbeidsboken."
                 )
-            seen_ips.add(mon_ip)
+            globally_seen_monitoring_ips.add(mon_ip)
 
         if REQUIRE_MONITORING_TUNNEL_FOR_ERSPAN:
-            tun_rows = _find_vrf_rows(tunnel_data, MONITORING_VRF)
+            tun_rows = _find_vrf_rows(sheet_data.get("tunnel_data"), MONITORING_VRF)
             if tun_rows.empty:
                 raise ValueError(
                     f"Site {site}: NO-MPLS + ERSPAN krever en egen DMVPN/EIGRP-tunnel "
                     f"for VRF {MONITORING_VRF}. Legg til en MONITORING-rad i tunnel-tabellen."
                 )
 
-    # Second pass: destination must live in MONITORING, never MGMT.
-    all_monitoring_nets = list(monitoring_networks.values())
-    all_mgmt_nets = list(mgmt_networks.values())
-    for site, destination in destinations.items():
-        dest_ip = ipaddress.ip_address(destination)
-        if any(dest_ip in net for net in all_mgmt_nets):
+    return {
+        "active_sites": active_erspan_sites,
+        "hub_site": hub["site"],
+        "destination_ip": destination,
+        "erspan_id": DEFAULT_ERSPAN_ID,
+    }
+
+
+def _validate_management_servers_for_workbook(file, sheets):
+    """Ensure TACACS/Syslog server IPs are explicit, consistent and in HUB MGMT."""
+    values = []
+    hub_record = None
+
+    for sheet in sheets:
+        sheet_data = read_sheet(file, sheet)
+        md = sheet_data["md"]
+        md_top = sheet_data["md_top"]
+        site = _site_id(md.iloc[0]["site"])
+        tacacs = _get_tacacs_server_ip(md_top)
+        syslog = _get_syslog_server_ip(md_top)
+        values.append((site, tacacs, syslog))
+        if _is_hub_site(md, md_top, site):
+            if hub_record is not None:
+                raise ValueError("Flere HUB-sites funnet ved validering av management-servere.")
+            hub_record = (site, sheet_data, tacacs, syslog)
+
+    if hub_record is None:
+        raise ValueError("Fant ikke HUB-site ved validering av TACACS/Syslog-servere.")
+
+    tacacs_values = {x[1] for x in values}
+    syslog_values = {x[2] for x in values}
+    if len(tacacs_values) != 1 or len(syslog_values) != 1:
+        detail = ", ".join(
+            f"Site {site}: TACACS={tacacs}, Syslog={syslog}"
+            for site, tacacs, syslog in values
+        )
+        raise ValueError(
+            "TACACS/Syslog-serverne må være konsistente mellom site-arkene. " + detail
+        )
+
+    site, sheet_data, tacacs, syslog = hub_record
+    mgmt_rows = _find_vrf_rows(sheet_data.get("ip_data"), "MGMT")
+    if mgmt_rows.empty:
+        raise ValueError(f"HUB Site {site}: finner ikke MGMT-subnett for servervalidering.")
+    r = mgmt_rows.iloc[0]
+    mgmt_net = ipaddress.ip_network(
+        f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
+    )
+    for label, server in (("TACACS", tacacs), ("Syslog", syslog)):
+        addr = ipaddress.ip_address(server)
+        if addr not in mgmt_net or addr in {mgmt_net.network_address, mgmt_net.broadcast_address}:
             raise ValueError(
-                f"Site {site}: ERSPAN-destinasjon {destination} ligger i et MGMT-nett. "
-                f"ERSPAN må bruke VRF/VLAN {MONITORING_VRF}."
-            )
-        if not any(dest_ip in net for net in all_monitoring_nets):
-            raise ValueError(
-                f"Site {site}: ERSPAN-destinasjon {destination} ligger ikke i noe "
-                f"MONITORING-subnett definert i arbeidsboken."
+                f"{label}-server {server} må ligge som gyldig host i HUB MGMT-nettet {mgmt_net}."
             )
 
-    return active_erspan_sites
+    return {"tacacs": tacacs, "syslog": syslog, "same_server": tacacs == syslog}
 
 
 def _validate_span_modes_for_workbook(file, sheets):
@@ -525,35 +708,31 @@ def _effective_vlan_info(row, md, is_hub):
     return vlan_info
 
 
-def _build_port_plan(row, md, swi_data, site, is_hub=False):
+def _site_service_vlans(swi_data, md, is_hub):
+    """Return the union of service VLANs used anywhere in this site.
+
+    vlan-antall controls LOCAL access-port allocation only.  A VLAN that is
+    present on SW3 must still exist and be allowed across the transit trunks
+    on SW2/SW1 so it can reach the site router.
+
+    VLAN 200 is special: _effective_vlan_info() only keeps it on HUB SW1.
+    The trunk generator additionally removes it from switch-to-switch trunks.
     """
-    Port model used by the workbook:
+    vlans = []
+    for _, site_row in swi_data.iterrows():
+        for vlan, _count in _effective_vlan_info(site_row, md, is_hub):
+            vlans.append(vlan)
+    return _ordered_unique(vlans)
 
-      SW1 (distribution switch):
-        - skipped physical ports
-        - 1 dedicated MGMT port
-        - optional 1 local SPAN/RSPAN IDS destination port
-        - optional 1 ERSPAN sensor access port on the HUB SW1
-        - access ports from low to high
-        - exactly 1 physical uplink to the site router
-        - num_downlink * etherchan_num ports for switch-to-switch downlinks
 
-      SW2+ (downstream switches):
-        - skipped physical ports
-        - 1 dedicated MGMT port
-        - access ports from low to high
-        - etherchan_num ports for ONE uplink EtherChannel toward the upstream switch
-        - num_downlink * etherchan_num ports for further downlinks
+def _build_port_plan(row, md, md_top, swi_data, site, is_hub=False):
+    """Build deterministic physical port allocation for a switch.
 
-    This matches the Excel capacity logic:
-      SW1:  ports - skipped - MGMT - local_monitor_port? - router_uplink(1)
-            - num_downlink * etherchan_num
-
-      ERSPAN:
-        - no local monitor port is needed on normal source switches
-        - HUB SW1 reserves one access port for the central ERSPAN sensor
-      SW2+: ports - skipped - MGMT
-            - (1 + num_downlink) * etherchan_num
+    Every switch keeps one dedicated MGMT access port as before.  On HUB SW1
+    that port is the TACACS/Syslog server port when both services share an IP.
+    If the service IPs differ, HUB SW1 reserves one additional MGMT port for
+    Syslog/Security Onion management.  SPAN/RSPAN reserve a local destination
+    port on SW1; ERSPAN reserves a mirror destination port only on HUB SW1.
     """
     has_new_num_ports = (
         "num_ports_tot" in row.index
@@ -586,25 +765,22 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
 
     first_usable = skipped_ports
     if has_new_num_ports:
-        # New model: skipped ports are real physical ports that are excluded
-        # from allocation and will be blackholed/shut below.
         last_port = num_ports - 1
         usable_count = num_ports - skipped_ports
         skipped_physical_ports = list(range(0, skipped_ports))
     else:
-        # Legacy model: num_ports is the physical count and skipped_ports is
-        # only an interface-number offset (e.g. Gi1/0/1..24).
         last_port = skipped_ports + num_ports - 1
         usable_count = num_ports
         skipped_physical_ports = []
 
     mgmt_port = first_usable
+    tacacs_server = _get_tacacs_server_ip(md_top)
+    syslog_server = _get_syslog_server_ip(md_top)
+    separate_server_ports = (
+        is_hub and is_primary_switch and tacacs_server != syslog_server
+    )
+    syslog_port = mgmt_port + 1 if separate_server_ports else mgmt_port
 
-    # Local sensor-port rules:
-    #   SPAN/RSPAN -> SW1 needs one local IDS destination port.
-    #   ERSPAN     -> source switches do not need a physical destination port,
-    #                 but HUB SW1 reserves one access port for the central
-    #                 ERSPAN/IDS sensor in the MONITORING VLAN.
     span_mode = _get_span_mode(md)
     if span_mode == "RSPAN" and len(swi_data) < 2:
         raise ValueError(
@@ -620,10 +796,12 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         )
     )
 
-    dedicated_ports = 1 + (1 if local_sensor_port_required else 0)  # MGMT (+ sensor)
+    server_port_count = 1 + (1 if separate_server_ports else 0)
+    sensor_port = (
+        first_usable + server_port_count if local_sensor_port_required else None
+    )
+    dedicated_ports = server_port_count + (1 if local_sensor_port_required else 0)
 
-    # SW1 has one physical router uplink. Downstream switches use an
-    # EtherChannel-sized uplink toward their upstream switch.
     uplink_member_count = 1 if is_primary_switch else etherchan_ports
     downlink_member_count = num_downlinks * etherchan_ports
     trunk_member_count = uplink_member_count + downlink_member_count
@@ -633,19 +811,16 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         uplink_desc = "1 router-uplink" if is_primary_switch else f"{etherchan_ports}-ports uplink"
         raise ValueError(
             f"SW{sw_id}: ikke nok porter. {usable_count} brukbare porter, men "
-            f"MGMT{' + sensor-port' if local_sensor_port_required else ''} + {uplink_desc} + "
-            f"downlinks krever {dedicated_ports + trunk_member_count} porter."
+            f"dedikerte MGMT/server/sensor-porter + {uplink_desc} + downlinks krever "
+            f"{dedicated_ports + trunk_member_count} porter."
         )
 
-    span_port = mgmt_port + 1 if local_sensor_port_required else None
-    first_access_port = mgmt_port + 1 + (1 if local_sensor_port_required else 0)
+    first_access_port = first_usable + dedicated_ports
     last_access_port = first_access_port + available_access_slots - 1
 
-    # Reserve uplink at the highest interface numbers.
     uplink_start = last_port - uplink_member_count + 1
     uplink_ports = list(range(uplink_start, last_port + 1))
 
-    # Reserve downlink groups immediately below the uplink.
     downlink_groups = []
     first_downlink_top = uplink_start - 1
     for idx in range(num_downlinks):
@@ -653,14 +828,13 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         group_start = group_end - etherchan_ports + 1
         downlink_groups.append(list(range(group_start, group_end + 1)))
 
-    # VLAN200 is only effective on hub SW1.
     vlan_info = _effective_vlan_info(row, md, is_hub)
     allocated_access_ports = sum(max(0, count) for _, count in vlan_info)
     if allocated_access_ports > available_access_slots:
         raise ValueError(
             f"SW{sw_id}: vlan-antall bruker {allocated_access_ports} access-porter, "
             f"men bare {available_access_slots} er tilgjengelige etter "
-            f"MGMT/monitoring/uplink/downlinks."
+            f"dedikerte porter/uplink/downlinks."
         )
 
     expected_free = _value(row, ["num_port_ledig"], None)
@@ -680,8 +854,11 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
         "skipped_ports": skipped_ports,
         "skipped_physical_ports": skipped_physical_ports,
         "mgmt_port": mgmt_port,
-        "span_port": span_port,
-        "sensor_port": span_port,
+        "tacacs_port": mgmt_port,
+        "syslog_port": syslog_port,
+        "separate_server_ports": separate_server_ports,
+        "span_port": sensor_port,
+        "sensor_port": sensor_port,
         "span_mode": span_mode,
         "first_access_port": first_access_port,
         "last_access_port": last_access_port,
@@ -700,16 +877,11 @@ def _build_port_plan(row, md, swi_data, site, is_hub=False):
 
 def create_tacacs_config(md_top):
     my_data = {"config": {}, "network_info": {}}
-
-    global have_asked_tacacs_server, tacacs_server
-    if not have_asked_tacacs_server:
-        tacacs_server = input("IP-adressen til TACACS-serveren: ").strip()
-        have_asked_tacacs_server = True
-
+    tacacs_server = _get_tacacs_server_ip(md_top)
     tacacs_key = md_top.iloc[0].get("tacacs_key", "")
 
-    if not tacacs_server or pd.isna(tacacs_key) or not str(tacacs_key).strip():
-        raise ValueError("TACACS-server eller TACACS-key mangler")
+    if pd.isna(tacacs_key) or not str(tacacs_key).strip():
+        raise ValueError("TACACS-key mangler i Excel")
 
     my_data["config"]["aaa new-model"] = []
     my_data["config"]["aaa group server tacacs+ TACACS-GROUP"] = [
@@ -719,26 +891,17 @@ def create_tacacs_config(md_top):
     ]
     my_data["config"]["aaa authentication login default group TACACS-GROUP local"] = []
     my_data["config"]["aaa authorization exec default group TACACS-GROUP local"] = []
-
     return my_data
 
 
-def create_rsyslog_config():
+def create_rsyslog_config(md_top):
     my_data = {"config": {}, "network_info": {}}
-
-    global have_asked_rsyslog_server, rsyslog_server
-    if not have_asked_rsyslog_server:
-        rsyslog_server = input("IP-adressen til Rsyslog-serveren: ").strip()
-        have_asked_rsyslog_server = True
-
-    if not rsyslog_server:
-        raise ValueError("Rsyslog-server mangler")
+    rsyslog_server = _get_syslog_server_ip(md_top)
 
     my_data["config"]["service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} transport udp port 514"] = []
     my_data["config"]["logging trap informational"] = []
     my_data["config"]["logging source-interface Vlan10"] = []
-
     return my_data
 
 
@@ -779,7 +942,23 @@ def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None):
     return my_data
 
 
-def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
+def _mgmt_access_port_config(description, mgmt_vlan):
+    return [
+        f"description {description}",
+        "ip arp inspection trust",
+        "switchport mode access",
+        f"switchport access vlan {mgmt_vlan}",
+        "switchport port-security",
+        "switchport port-security maximum 2",
+        "switchport port-security violation restrict",
+        "spanning-tree bpduguard enable",
+        "spanning-tree portfast",
+        "no shutdown",
+        "exit",
+    ]
+
+
+def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_context=None):
     info = {"config": {}, "network_info": {}}
     site = _site_id(md.iloc[0]["site"])
     secret = md.iloc[0].get("secret", "")
@@ -790,8 +969,21 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
         else None
     )
     erspan_destination = (
-        _get_erspan_destination(md) if span_mode_site == "ERSPAN" else None
+        erspan_context.get("destination_ip")
+        if span_mode_site == "ERSPAN" and erspan_context
+        else None
     )
+    erspan_id = (
+        int(erspan_context.get("erspan_id", DEFAULT_ERSPAN_ID))
+        if erspan_context
+        else DEFAULT_ERSPAN_ID
+    )
+
+    if span_mode_site == "ERSPAN" and not erspan_destination:
+        raise ValueError("ERSPAN-destinasjon kunne ikke utledes fra HUB SW1 MONITORING ip.")
+
+    tacacs_server = _get_tacacs_server_ip(md_top)
+    syslog_server = _get_syslog_server_ip(md_top)
 
     for _, row in swi_data.iterrows():
         sw_id = _switch_id(row["SW"])
@@ -800,7 +992,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
         gateway = row["gateway"]
         mask = row["mask"]
         intf_prefix = str(row["intf_prefix"]).strip()
-        plan = _build_port_plan(row, md, swi_data, site, is_hub)
+        plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
@@ -816,7 +1008,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
         except (ValueError, TypeError):
             pass
         sw_cfg.update(enable_ssh(md, mgmt_network=mgmt_network, mgmt_wildcard=mgmt_wildcard)["config"])
-        sw_cfg.update(create_rsyslog_config()["config"])
+        sw_cfg.update(create_rsyslog_config(md_top)["config"])
 
         sw_cfg[f"vlan {mgmt_vlan}"] = [f"name MGMT_VLAN_{mgmt_vlan}", "exit"]
         sw_cfg[f"interface vlan {mgmt_vlan}"] = [
@@ -832,12 +1024,6 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
             monitoring_mask = monitoring["mask"]
             monitoring_gateway = monitoring["gateway"]
 
-            # Keep switch routing simple: MONITORING is a normal global SVI on
-            # the switch.  The MONITORING VRF is enforced on the site router,
-            # not on the access/distribution switch.
-            #
-            # ip routing is required so the switch can use a specific route for
-            # remote ERSPAN destinations while retaining the MGMT default route.
             sw_cfg["ip routing"] = []
             sw_cfg[f"vlan {monitoring_vlan}"] = ["name MONITORING", "exit"]
             sw_cfg[f"interface vlan {monitoring_vlan}"] = [
@@ -845,40 +1031,35 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
                 "no shutdown",
                 "exit",
             ]
-
-            # With ip routing enabled, ip default-gateway is ignored.  Keep
-            # ordinary switch management in the global table via the MGMT gateway.
             sw_cfg[f"ip route 0.0.0.0 0.0.0.0 {gateway}"] = []
 
-            # ERSPAN must prefer the dedicated MONITORING path.  If the sensor is
-            # outside the local MONITORING subnet, install a /32 host route through
-            # the local MONITORING gateway.  This prevents the global default route
-            # via MGMT from carrying ERSPAN traffic.
             destination_ip = ipaddress.ip_address(erspan_destination)
             if destination_ip not in monitoring["network"]:
                 sw_cfg[
                     f"ip route {erspan_destination} 255.255.255.255 {monitoring_gateway}"
                 ] = []
 
-        sw_cfg[f"interface {intf_prefix}{plan['mgmt_port']}"] = [
-            f"description Dedicated management access port for VLAN {mgmt_vlan}",
-            # Trusted: physically controlled infra port for statically addressed mgmt hosts
-            # (e.g. the TACACS/Rsyslog server), which have no DHCP snooping binding for DAI to check.
-            "ip arp inspection trust",
-            "switchport mode access",
-            f"switchport access vlan {mgmt_vlan}",
-            "switchport port-security",
-            "switchport port-security maximum 2",
-            "switchport port-security violation restrict",
-            "spanning-tree bpduguard enable",
-            "spanning-tree portfast",
-            "no shutdown",
-            "exit",
-        ]
+        # Preserve the existing dedicated MGMT port on every switch.  On HUB SW1
+        # it becomes the physical server handoff for TACACS/Syslog.
+        if is_hub and plan["is_primary_switch"]:
+            if tacacs_server == syslog_server:
+                mgmt_desc = "Dedicated TACACS/Syslog management server port"
+            else:
+                mgmt_desc = "Dedicated TACACS management server port"
+        else:
+            mgmt_desc = f"Dedicated management access port for VLAN {mgmt_vlan}"
 
-        # The central ERSPAN sensor is connected locally on HUB SW1.
-        # This port is deliberately placed immediately after the dedicated MGMT
-        # port by the port-plan (e.g. MGMT=g0/1 -> sensor=g0/2).
+        sw_cfg[f"interface {intf_prefix}{plan['tacacs_port']}"] = _mgmt_access_port_config(
+            mgmt_desc, mgmt_vlan
+        )
+
+        if is_hub and plan["is_primary_switch"] and plan["separate_server_ports"]:
+            sw_cfg[f"interface {intf_prefix}{plan['syslog_port']}"] = _mgmt_access_port_config(
+                "Dedicated Syslog/Security Onion management server port", mgmt_vlan
+            )
+
+        # ERSPAN destination port is a true mirror destination.  It is not an
+        # access port and carries no IP/VLAN configuration toward the sensor NIC.
         if (
             span_mode_site == "ERSPAN"
             and is_hub
@@ -886,14 +1067,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
             and plan["sensor_port"] is not None
         ):
             sw_cfg[f"interface {intf_prefix}{plan['sensor_port']}"] = [
-                "description Dedicated ERSPAN IDS/IPS sensor access port",
-                "switchport mode access",
-                f"switchport access vlan {monitoring['vlan']}",
-                "switchport port-security",
-                "switchport port-security maximum 2",
-                "switchport port-security violation restrict",
-                "spanning-tree bpduguard enable",
-                "spanning-tree portfast",
+                "description Dedicated Security Onion ERSPAN mirror destination port",
                 "no shutdown",
                 "exit",
             ]
@@ -914,12 +1088,6 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
 
         elif span_mode == "RSPAN":
             rspan_vlan = _get_rspan_vlan(md)
-
-            # The primary switch is the RSPAN DESTINATION switch. Cisco does
-            # not support using the same RSPAN VLAN as both a source session
-            # and a destination session on the same switch. Therefore SW1 only
-            # terminates the remote stream; downstream switches are the RSPAN
-            # source switches.
             if plan["is_primary_switch"]:
                 if plan["span_port"] is None:
                     raise ValueError(
@@ -937,30 +1105,49 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
                 sw_cfg[f"monitor session 1 destination remote vlan {rspan_vlan}"] = []
 
         elif span_mode == "ERSPAN":
-            # ERSPAN is supported only on platforms/IOS versions with ERSPAN
-            # capability (for example Catalyst 3850 on supported IOS XE).
-            destination_ip = erspan_destination
-            try:
-                erspan_id = int(site) * 100 + int(sw_id)
-            except ValueError as exc:
-                raise ValueError(
-                    f"ERSPAN krever numerisk site/SW-id. Fikk site={site}, SW={sw_id}."
-                ) from exc
-            if not 1 <= erspan_id <= 1023:
-                raise ValueError(f"Beregnet ERSPAN-ID {erspan_id} er utenfor 1-1023")
+            if is_hub and plan["is_primary_switch"]:
+                # One common ERSPAN-ID lets a single destination session receive
+                # mirrored traffic from all remote ERSPAN source switches.
+                sw_cfg["monitor session 1 type erspan-destination"] = [
+                    "description ERSPAN-TO-SECURITY-ONION",
+                    f"destination interface {intf_prefix}{plan['sensor_port']}",
+                    "source",
+                    f"erspan-id {erspan_id}",
+                    f"ip address {erspan_destination}",
+                    "no shutdown",
+                    "exit",
+                    "exit",
+                ]
+                print(
+                    f"ADVARSEL Site {site} SW1: ERSPAN destination-porten kan bare tilhøre én "
+                    "monitor-session. Lokal-only trafikk på HUB SW1 speiles derfor ikke i ERSPAN-modus. "
+                    "Remote sites speiler klient-ingress og router-uplink-ingress for å redusere duplikater."
+                )
+            else:
+                # Avoid duplicate ERSPAN copies across a multi-switch site:
+                # - mirror ingress on real client access ports
+                # - on SW1, also mirror ingress from the site router/WAN
+                # - never mirror switch-to-switch trunks
+                source_lines = _erspan_source_interface_lines(plan, intf_prefix)
 
-            sw_cfg[f"monitor session 1 type erspan-source"] = [
-                f"description ERSPAN-SITE-{site}-SW{sw_id}",
-                f"source vlan {','.join(map(str, span_vlans))} both",
-                "no shutdown",
-                "destination",
-                f"ip address {destination_ip}",
-                f"erspan-id {erspan_id}",
-                f"origin ip-address {monitoring_ip}",
-                "ip ttl 32",
-                "exit",
-                "exit",
-            ]
+                if source_lines:
+                    sw_cfg["monitor session 1 type erspan-source"] = [
+                        f"description ERSPAN-SITE-{site}-SW{sw_id}",
+                        *source_lines,
+                        "destination",
+                        f"ip address {erspan_destination}",
+                        f"erspan-id {erspan_id}",
+                        f"origin ip-address {monitoring_ip}",
+                        "ip ttl 32",
+                        "exit",
+                        "no shutdown",
+                        "exit",
+                    ]
+                else:
+                    print(
+                        f"INFO Site {site} SW{sw_id}: ingen ERSPAN-source opprettet; "
+                        "switchen har ingen klient-accessporter å speile."
+                    )
 
         if span_mode_site != "ERSPAN":
             sw_cfg[f"ip default-gateway {gateway}"] = []
@@ -969,7 +1156,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub):
     return info
 
 
-def config_vlan(swi_data, site, md, ip_data, vrf_data, is_hub):
+def config_vlan(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
     info = {"config": {}, "network_info": {}}
     isp_vlan = _get_isp_vlan(md)
     span_mode_site = _get_span_mode(md)
@@ -979,11 +1166,18 @@ def config_vlan(swi_data, site, md, ip_data, vrf_data, is_hub):
         else None
     )
 
+    # IMPORTANT:
+    # vlan-antall is a LOCAL access-port requirement, not a statement that the
+    # VLAN exists only on that switch.  Build a site-wide union so intermediate
+    # switches can actually forward VLANs used farther downstream.
+    site_service_vlans = _site_service_vlans(swi_data, md, is_hub)
+
     for _, row in swi_data.iterrows():
         sw_id = _switch_id(row["SW"])
+        mgmt_vlan = _int_value(row, ["MGMT Vlan"], 10)
         intf_prefix = str(row["intf_prefix"]).strip()
-        plan = _build_port_plan(row, md, swi_data, site, is_hub)
-        vlan_info = plan["vlan_info"]
+        plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
+        local_vlan_info = plan["vlan_info"]
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
@@ -991,9 +1185,19 @@ def config_vlan(swi_data, site, md, ip_data, vrf_data, is_hub):
 
         sw_cfg["vlan 999"] = ["name NATIVE_UBRUKT", "exit"]
 
+        # Create every site service VLAN on every switch that may need to
+        # transport it.  ISP VLAN 200 remains local to HUB SW1 only.
+        vlans_to_create = [
+            vlan
+            for vlan in site_service_vlans
+            if vlan != isp_vlan or (is_hub and plan["is_primary_switch"])
+        ]
+        for vlan in vlans_to_create:
+            sw_cfg[f"vlan {vlan}"] = [f"name VLAN_{vlan}", "exit"]
+
         if span_mode_site == "ERSPAN":
             mon_vlan = monitoring["vlan"]
-            service_vlans = {_int_value(row, ["MGMT Vlan"], 10), *[v for v, _ in vlan_info]}
+            service_vlans = {mgmt_vlan, *site_service_vlans}
             if mon_vlan in service_vlans:
                 raise ValueError(
                     f"SW{sw_id}: MONITORING VLAN {mon_vlan} kolliderer med et eksisterende tjeneste-VLAN."
@@ -1002,19 +1206,17 @@ def config_vlan(swi_data, site, md, ip_data, vrf_data, is_hub):
 
         if plan["span_mode"] == "RSPAN":
             rspan_vlan = _get_rspan_vlan(md)
-            service_vlans = {mgmt_vlan for mgmt_vlan in [_int_value(row, ["MGMT Vlan"], 10)]}
-            service_vlans.update(v for v, _ in vlan_info)
+            service_vlans = {mgmt_vlan, *site_service_vlans}
             if rspan_vlan in service_vlans:
                 raise ValueError(
                     f"SW{sw_id}: RSPAN-VLAN {rspan_vlan} kolliderer med et tjeneste-VLAN."
                 )
             sw_cfg[f"vlan {rspan_vlan}"] = ["name RSPAN_MONITOR", "remote-span", "exit"]
 
+        # LOCAL access-port allocation still comes only from this switch's
+        # vlan-antall entry.
         current_port = plan["first_access_port"]
-        for vlan, count in vlan_info:
-            # VLAN must exist even when it has zero local access ports.
-            sw_cfg[f"vlan {vlan}"] = [f"name VLAN_{vlan}", "exit"]
-
+        for vlan, count in local_vlan_info:
             if count <= 0:
                 continue
 
@@ -1027,8 +1229,6 @@ def config_vlan(swi_data, site, md, ip_data, vrf_data, is_hub):
             ]
             if vlan == isp_vlan:
                 # ISP transit port: infrastructure hand-off, not a client access port.
-                # Excluded from DAI/DHCP snooping VLAN checks, so trust is meaningless here;
-                # port-security/bpduguard are client-host protections that don't apply to it either.
                 port_cfg.extend([
                     "switchport mode access",
                     f"switchport access vlan {vlan}",
@@ -1072,7 +1272,7 @@ def _trunk_config(vlans, description, channel_group=None, trusted=True):
     return lines
 
 
-def config_trunk_and_dchp_snooping(swi_data, site, md, ip_data, vrf_data, is_hub):
+def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
     info = {"config": {}, "network_info": {}}
     isp_vlan = _get_isp_vlan(md)
     span_mode_site = _get_span_mode(md)
@@ -1082,18 +1282,24 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, ip_data, vrf_data, is_hub
         else None
     )
 
+    # VLANs required anywhere in the site must traverse the intermediate
+    # switch trunks, even when a particular switch has zero local access ports
+    # in that VLAN.
+    site_service_vlans = _site_service_vlans(swi_data, md, is_hub)
+
     for _, row in swi_data.iterrows():
         sw_id = _switch_id(row["SW"])
         mgmt_vlan = _int_value(row, ["MGMT Vlan"], 10)
         intf_prefix = str(row["intf_prefix"]).strip()
-        plan = _build_port_plan(row, md, swi_data, site, is_hub)
+        plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
         sw_cfg = info["config"][sw_name]
 
-        vlan_numbers = [vlan for vlan, _ in plan["vlan_info"]]
-        all_trunk_vlans = _ordered_unique([mgmt_vlan, *vlan_numbers, 999])
+        # Do NOT derive trunk VLANs from this switch's vlan-antall.
+        # vlan-antall only says how many LOCAL access ports the switch needs.
+        all_trunk_vlans = _ordered_unique([mgmt_vlan, *site_service_vlans, 999])
         if span_mode_site == "ERSPAN":
             all_trunk_vlans = _ordered_unique([*all_trunk_vlans[:-1], monitoring["vlan"], 999])
 
@@ -1261,7 +1467,7 @@ def _refresh_ssh_acls(data, swi_data, sn):
                 sw_cfg["ip access-list standard SSH-MGMT-ONLY"] = acl_lines
 
 
-def create_site_sw_config(file, sheet, config_file):
+def create_site_sw_config(file, sheet, config_file, erspan_context=None):
     sheet_data = read_sheet(file, sheet)
     data = fetch_site_data(config_file)
 
@@ -1275,13 +1481,13 @@ def create_site_sw_config(file, sheet, config_file):
     is_hub = _is_hub_site(md, md_top, sn)
     data[f"site {sn}"] = {"config": {}}
 
-    vlan_conf = config_vlan(swi_data, sn, md, ip_data, vrf_data, is_hub)
+    vlan_conf = config_vlan(swi_data, sn, md, md_top, ip_data, vrf_data, is_hub)
     data = update_site_config(data, swi_data, sn, vlan_conf)
 
-    global_conf = global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub)
+    global_conf = global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_context)
     data = update_site_config(data, swi_data, sn, global_conf)
 
-    trunk_conf = config_trunk_and_dchp_snooping(swi_data, sn, md, ip_data, vrf_data, is_hub)
+    trunk_conf = config_trunk_and_dchp_snooping(swi_data, sn, md, md_top, ip_data, vrf_data, is_hub)
     data = update_site_config(data, swi_data, sn, trunk_conf)
 
     _refresh_ssh_acls(data, swi_data, sn)
@@ -1336,11 +1542,12 @@ def create_sw_configs_main(file, config_file="site_switch_config.json"):
     # Fail fast before any config files are generated if enabled sites mix
     # SPAN/RSPAN/ERSPAN modes. Blank span_mode is allowed and means OFF.
     _validate_span_modes_for_workbook(file, sites_sheets)
-    _validate_erspan_architecture_for_workbook(file, sites_sheets)
+    _validate_management_servers_for_workbook(file, sites_sheets)
+    erspan_context = _validate_erspan_architecture_for_workbook(file, sites_sheets)
 
     data = {}
     for sheet in sites_sheets:
-        data = create_site_sw_config(file, sheet, config_file)
+        data = create_site_sw_config(file, sheet, config_file, erspan_context)
 
     create_or_update_config_files(data)
 

@@ -1,2 +1,0 @@
-transistore som knapp (forced beta og sånt): https://forum.digikey.com/t/digital-switching-transistor-saturation-and-forced-beta/37293
-BJT-charakteristika (figur/bild): https://electronics.stackexchange.com/questions/619391/graphing-modes-of-bjt

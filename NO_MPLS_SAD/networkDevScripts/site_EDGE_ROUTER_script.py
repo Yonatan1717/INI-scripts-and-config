@@ -545,80 +545,76 @@ def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
     return my_data
 
 
-def create_tacacs_config(md, ip_data, sites_data, is_hub):
-    my_data = {}
-    my_data["config"] = {}
-    my_data["network_info"] = {}
+def _get_management_server_ip(md, names, label):
+    """Read a management service IP directly from Excel top metadata."""
+    if md is None or md.empty:
+        raise ValueError(f"{label}-server mangler i Excel-metadata.")
 
+    row = md.iloc[0]
+    value = None
+    for name in names:
+        if name in row.index:
+            candidate = row.get(name)
+            if not pd.isna(candidate) and str(candidate).strip():
+                value = candidate
+                break
+
+    if value is None:
+        raise ValueError(f"{label}-server mangler i Excel. Forventet felt: {names[0]}.")
+
+    try:
+        return str(ipaddress.ip_address(str(value).strip()))
+    except ValueError as exc:
+        raise ValueError(f"Ugyldig {label}-server-IP i Excel: {value}") from exc
+
+
+def create_tacacs_config(md, ip_data, sites_data, is_hub):
+    my_data = {"config": {}, "network_info": {}}
     if md.empty:
         return my_data
 
     row = md.iloc[0]
-
-    if is_hub:
-        network = ip_data[ip_data["vrf"] == "MGMT"].iloc[0].get("nett id", "")
-        tacacs_server = str(ipaddress.ip_address(network) + 10)
-    else:
-        hub_info = sites_data[sites_data["hub"]]["network_info"]
-        for interface, info in hub_info["interfaces"].items():
-            if info.get("vrf", "") == "MGMT":
-                tacacs_server = str(ipaddress.ip_address(info.get("address", "")) - 1 + 10)
-
-    
-
+    tacacs_server = _get_management_server_ip(
+        md,
+        ["tacacs_server_ip", "tacacs server ip", "tacacs_server"],
+        "TACACS",
+    )
     tacacs_key = row.get("tacacs_key", "")
-    if not tacacs_server or not tacacs_key:
-        print("tacas feila")
-        exit(1)
+    if pd.isna(tacacs_key) or not str(tacacs_key).strip():
+        raise ValueError("TACACS-key mangler i Excel")
 
     if is_hub:
         print(f"TACACS server: {tacacs_server}")
-        print(f"TACACS key: {tacacs_key}")
-    
+
     my_data["config"]["aaa new-model"] = []
-    my_data["config"][f"aaa group server tacacs+ TACACS-GROUP"] = [
-        f"server-private {tacacs_server} key {tacacs_key}",
-        f"ip vrf forwarding MGMT",
-        f"ip tacacs source-interface loop10",
+    my_data["config"]["aaa group server tacacs+ TACACS-GROUP"] = [
+        f"server-private {tacacs_server} key {str(tacacs_key).strip()}",
+        "ip vrf forwarding MGMT",
+        "ip tacacs source-interface loop10",
         "exit"
     ]
-    my_data["config"][f"aaa authentication login default group TACACS-GROUP local"] = []
-    my_data["config"][f"aaa authorization exec default group TACACS-GROUP local"] = []
-
+    my_data["config"]["aaa authentication login default group TACACS-GROUP local"] = []
+    my_data["config"]["aaa authorization exec default group TACACS-GROUP local"] = []
     return my_data
 
 
 def create_rsyslog_config(md, ip_data, sites_data, is_hub):
-    my_data = {}
-    my_data["config"] = {}
-    my_data["network_info"] = {}
-
+    my_data = {"config": {}, "network_info": {}}
     if md.empty:
         return my_data
 
-    row = md.iloc[0]
-
-    if is_hub:
-        network = ip_data[ip_data["vrf"] == "MGMT"].iloc[0].get("nett id", "")
-        rsyslog_server = str(ipaddress.ip_address(network) + 10)
-    else:
-        hub_info = sites_data[sites_data["hub"]]["network_info"]
-        for interface, info in hub_info["interfaces"].items():
-            if info.get("vrf", "") == "MGMT":
-                rsyslog_server = str(ipaddress.ip_address(info.get("address", "")) - 1 + 10)
-
-    if not rsyslog_server:
-        print("rsyslog server not found")
-        exit(1)
-        
+    rsyslog_server = _get_management_server_ip(
+        md,
+        ["syslog_server_ip", "rsyslog_server_ip", "syslog server ip", "syslog_server"],
+        "Syslog",
+    )
     if is_hub:
         print(f"Rsyslog server: {rsyslog_server}")
 
-    my_data["config"][f"service timestamps log datetime msec show-timezone"] = []
+    my_data["config"]["service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} vrf MGMT transport udp port 514"] = []
-    my_data["config"][f"logging trap informational"] = []
-    my_data["config"][f"logging source-interface loop10 vrf MGMT"] = []
-
+    my_data["config"]["logging trap informational"] = []
+    my_data["config"]["logging source-interface loop10 vrf MGMT"] = []
     return my_data
 
 
@@ -829,7 +825,7 @@ def set_up_DHCP_for_vrf_lans(ip_data, md):
         ip_gw = row["address min"]
         network = row["nett id"]
         mask = row["mask"]
-        num_res = row["antall-res"]
+        num_res = int(float(row["antall-res"]))
 
         ip_res_to = str(ipaddress.ip_address(ip_gw) + num_res)
 
