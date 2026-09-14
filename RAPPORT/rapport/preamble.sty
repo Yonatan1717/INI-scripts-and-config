@@ -35,9 +35,8 @@
   exponent-product=\cdot
 }
 
-% --- Innholdsfortegnelse og fysikknotasjon ---
+% --- Innholdsfortegnelse ---
 \usepackage{tocloft}
-\usepackage{physics}
 
 % --- Lenker (sist) ---
 \usepackage{hyperref}
@@ -45,12 +44,9 @@
   colorlinks=true,
   linkcolor=black,
   urlcolor=black,
-  citecolor=black
+  citecolor=black,
+  hypertexnames=false
 }
-
-% --- Kollisjon \qty mellom physics og siunitx ---
-\usepackage{letltxmacro}
-\AtBeginDocument{\LetLtxMacro\qty\SI} % robust for pdfLaTeX-kjerner
 
 % --- Små justeringer ---
 \emergencystretch=1em
