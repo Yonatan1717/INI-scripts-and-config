@@ -1,4 +1,164 @@
 \section{Design}
+% I preamble:
+% \usepackage{tabularx}
+% \usepackage[table]{xcolor}
+% \usepackage{array}
+
+\renewcommand{\arraystretch}{1.25}
+
+{\small
+\setlength{\tabcolsep}{4pt}
+\newcommand{\headercenter}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\centering\textbf{#1}}}
+\newcommand{\headerleft}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\raggedright\textbf{#1}}}
+\begin{longtable}{
+    |>{\centering\arraybackslash}p{0.6cm}
+    |>{\raggedright\arraybackslash}p{4.2cm}
+    |>{\centering\arraybackslash}p{0.7cm}
+    |>{\raggedright\arraybackslash}p{3.5cm}
+    |>{\raggedright\arraybackslash}p{4.2cm}|
+}
+\caption{Krav og tilhørende designprinsipper for nettverksløsning.}
+\label{tab:designkrav}\\
+\hline
+\headercenter{ID} &
+\headerleft{Krav} &
+\headercenter{Pri.} &
+\headerleft{Designprinsipp} &
+\headerleft{Begrunnelse} \\
+\hline
+\endfirsthead
+
+\caption[]{Krav og tilhørende designprinsipper for foreslått nettverksløsning.}\\
+\hline
+\headercenter{ID} &
+\headerleft{Krav} &
+\headercenter{Pri.} &
+\headerleft{Designprinsipp} &
+\headerleft{Begrunnelse} \\
+\hline
+\endhead
+
+\hline
+\multicolumn{5}{r}{\small Fortsetter på neste side} \\
+\endfoot
+
+\hline
+\endlastfoot
+
+1 &
+Nettverket skal segmenteres mellom ulike tjenester og brukergrupper. &
+\cellcolor{red!60}H &
+Kontrollert, sikker, fleksibel. &
+Segmentering begrenser trafikk mellom tjenester og reduserer konsekvensene dersom en klient eller del av nettverket kompromitteres. \\
+\hline
+
+2 &
+Trafikk mellom segmenter skal begrenses til kun nødvendige tjenester. &
+\cellcolor{red!60}H &
+Kontrollert, minimert, sikker. &
+ACL-er basert på en definert trafikkpolicy sikrer at kun forventet og nødvendig trafikk tillates mellom nettverk og tjenester. \\
+\hline
+
+3 &
+Administrasjon av nettverksenheter skal kun være tilgjengelig fra autoriserte administrasjonsnett. &
+\cellcolor{red!60}H &
+Kontrollert, sikker, sporbar. &
+Eget MGMT-nett, SSH og tilgangskontroll reduserer eksponeringen av administrasjonsgrensesnitt og hindrer administrasjon fra ordinære klientnett. \\
+\hline
+
+4 &
+Administrativ tilgang skal autentiseres og administreres sentralt. &
+\cellcolor{orange!60}M &
+Sporbar, kontrollert, håndterbar. &
+Sentral AAA/TACACS gjør det mulig å kontrollere hvem som får administrativ tilgang og knytte aktivitet til individuelle brukere. \\
+\hline
+
+5 &
+Nettverket skal beskytte mot uautoriserte eller feilkonfigurerte klienter på lokale nett. &
+\cellcolor{red!60}H &
+Sikker, robust, motstandsdyktig. &
+DHCP Snooping, Dynamic ARP Inspection, IP Source Guard og Port Security reduserer risikoen for blant annet falske DHCP-servere og ARP-spoofing. \\
+\hline
+
+6 &
+Nettverket skal være beskyttet mot uønskede Layer~2-løkker og uautoriserte endringer i STP-topologien. &
+\cellcolor{red!60}H &
+Robust, motstandsdyktig, tilgjengelig. &
+BPDU Guard, Root Guard og Loop Guard reduserer risikoen for at feil eller uautoriserte svitsjer påvirker spanning-tree-topologien og tilgjengeligheten. \\
+\hline
+
+7 &
+Nettverksenheter skal sende logger til et sentralt loggsystem. &
+\cellcolor{orange!60}M &
+Sporbar, overvåkbar, beredskapsklar. &
+Sentral logging gjør det enklere å oppdage hendelser, analysere feil og sammenstille aktivitet på tvers av nettverksenheter. \\
+\hline
+
+8 &
+Systemklokkene på nettverksenhetene skal synkroniseres. &
+\cellcolor{orange!60}M &
+Sporbar, konsistent, håndterbar. &
+Felles tidsgrunnlag gjør det mulig å korrelere logger og hendelser mellom forskjellige enheter ved feilsøking og hendelseshåndtering. \\
+\hline
+
+9 &
+Nettverkstrafikk skal kunne overvåkes sentralt for å oppdage mistenkelig aktivitet. &
+\cellcolor{orange!60}M &
+Overvåkbar, sporbar, sikker. &
+SPAN, RSPAN eller ERSPAN gjør det mulig å sende relevant nettverkstrafikk til en sentral IDS-løsning som Suricata eller mer avanserte overvåkingsverktøy som Security Onion. \\
+\hline
+
+10 &
+Det nye nettverket skal opprettholde dagens funksjonalitet for brukerne. &
+\cellcolor{red!60}H &
+Kapabel, tilgjengelig, kompatibel. &
+Sikkerhetstiltak skal innføres uten at nødvendige tjenester som telefoni, PA-anlegg, arbeidsnett eller velferdsnett mister nødvendig funksjonalitet. \\
+\hline
+
+11 &
+Løsningen skal i størst mulig grad benytte eksisterende maskinvare, programvare og lisenser. &
+\cellcolor{red!60}H &
+Kostnadseffektiv, gjenbrukbar, kompatibel. &
+Gjenbruk av eksisterende Cisco-utstyr og tilgjengelige funksjoner reduserer behovet for nyanskaffelser og gjør løsningen mulig innenfor eksisterende rammer. \\
+\hline
+
+12 &
+Eksisterende forbindelse levert av det litauiske forsvaret skal kunne beholdes uten endringer. &
+\cellcolor{red!60}H &
+Kompatibel, interoperabel, fleksibel. &
+Den nye lokale nettverksarkitekturen må kunne fungere over eksisterende Layer~3-VPN uten å kreve endringer hos ekstern leverandør. \\
+\hline
+
+13 &
+Nye lokasjoner og nettverkstjenester skal kunne etableres med begrenset manuelt konfigurasjonsarbeid. &
+\cellcolor{orange!60}M &
+Skalerbar, automatiserbar, effektiv. &
+Automatisk generering av konfigurasjon fra en standardisert Excel-mal reduserer manuelt arbeid og gjør det enklere å etablere nye sites raskt og konsistent. \\
+\hline
+
+14 &
+Like nettverksenheter skal konfigureres etter en felles sikkerhetsbaseline. &
+\cellcolor{orange!60}M &
+Standardisert, konsistent, vedlikeholdbar. &
+En felles baseline reduserer konfigurasjonsavvik og sikrer at grunnleggende sikkerhetstiltak implementeres likt på tvers av lokasjoner. \\
+\hline
+
+15 &
+Løsningen skal være dokumentert slik at den kan driftes og videreføres av senere kontingenter. &
+\cellcolor{red!60}H &
+Dokumenterbar, forståelig, vedlikeholdbar. &
+Tydelig dokumentasjon av topologi, IP-plan, tjenester og konfigurasjonsprinsipper reduserer personavhengighet og gjør videre drift og utvikling enklere. \\
+\hline
+
+16 &
+Endringer skal kunne testes og valideres før de innføres i produksjonsnettet. &
+\cellcolor{red!60}H &
+Testbar, kontrollert, sikker. &
+Testing i et separat miljø reduserer risikoen for at feilkonfigurasjon eller nye sikkerhetstiltak påvirker operative tjenester. \\
+\hline
+
+\end{longtable}
+}
 \subsection{Designkrav}
 \dots
 \subsection{IP-addresseringsplan}

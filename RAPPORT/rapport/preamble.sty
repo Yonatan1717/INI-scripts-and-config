@@ -17,6 +17,13 @@
 \usepackage{graphicx}
 \graphicspath{{Media/}}
 \usepackage[table]{xcolor}
+\makeatletter
+\providecommand{\insert@pcolumn}{\insert@column}
+\makeatother
+\ExplSyntaxOn
+\cs_if_exist:NF \tbl_gdecr_row_count:
+  { \cs_new:Npn \tbl_gdecr_row_count: {} }
+\ExplSyntaxOff
 
 % --- Struktur og lister ---
 \usepackage{enumitem}
