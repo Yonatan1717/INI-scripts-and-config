@@ -6,6 +6,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 SSH_DOMAIN = "lab.local"
+FLOW_POLICY_SHEET = "FLOW_POLICY"
 DEFAULT_ETHERCHANNEL_PORTS = 1
 DEFAULT_ISP_VLAN = 200
 # Set per variant below. Explicit Excel value always wins.
@@ -22,6 +23,14 @@ def _clean_header(value):
         return ""
     return str(value).strip()
 
+
+
+def _site_sheet_names(file):
+    return [
+        name
+        for name in load_workbook(file, read_only=True).sheetnames
+        if str(name).strip().upper() != FLOW_POLICY_SHEET
+    ]
 
 def _extract_table_blocks(df):
     """Return contiguous non-empty blocks as DataFrames with first row as header."""
@@ -523,7 +532,7 @@ def _validate_erspan_architecture_for_workbook(file, sheets):
     ]
     if len(hub_sw1_rows) != 1:
         raise ValueError(
-            f"HUB Site {hub['site']}: ERSPAN krever nøyaktig én SW1 i switch-tabellen."
+            f"HUB Site {hub['site']}: ERSPAN krever nøyaktig en SW1 i switch-tabellen."
         )
     destination = _get_switch_monitoring_ip(
         hub_sw1_rows.iloc[0], hub_monitoring, hub["site"], "1"
@@ -891,6 +900,8 @@ def create_tacacs_config(md_top):
     ]
     my_data["config"]["aaa authentication login default group TACACS-GROUP local"] = []
     my_data["config"]["aaa authorization exec default group TACACS-GROUP local"] = []
+    my_data["config"]["aaa accounting exec default start-stop group TACACS-GROUP"] = []
+    my_data["config"]["aaa accounting commands 15 default start-stop group TACACS-GROUP"] = []
     return my_data
 
 
@@ -901,6 +912,7 @@ def create_rsyslog_config(md_top):
     my_data["config"]["service timestamps log datetime msec show-timezone"] = []
     my_data["config"][f"logging host {rsyslog_server} transport udp port 514"] = []
     my_data["config"]["logging trap informational"] = []
+    my_data["config"]["logging buffered 16384 informational"] = []
     my_data["config"]["logging source-interface Vlan10"] = []
     return my_data
 
@@ -928,7 +940,7 @@ def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None):
     my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
 
-    vty_cfg = ["login authentication default", "transport input ssh"]
+    vty_cfg = ["login authentication default", "exec-timeout 10 0", "transport input ssh"]
     if mgmt_network and mgmt_wildcard:
         my_data["config"]["ip access-list standard SSH-MGMT-ONLY"] = [
             f"permit {mgmt_network} {mgmt_wildcard}",
@@ -1000,7 +1012,17 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
 
         sw_cfg[f"hostname {sw_name}"] = []
         sw_cfg[f"enable secret 9 {secret}"] = []
+        sw_cfg["service tcp-keepalives-in"] = []
+        sw_cfg["service tcp-keepalives-out"] = []
+        sw_cfg["vtp mode transparent"] = []
+        sw_cfg["banner motd ^CKun autorisert tilgang er tillatt. Aktivitet kan bli logget.^C"] = []
         sw_cfg.update(create_tacacs_config(md_top)["config"])
+        sw_cfg["line console 0"] = [
+            "login authentication default",
+            "exec-timeout 10 0",
+            "logging synchronous",
+            "exit",
+        ]
         mgmt_network = mgmt_wildcard = None
         try:
             mgmt_net = ipaddress.ip_network(f"{mgmt_ip}/{mask}", strict=False)
@@ -1119,7 +1141,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                     "exit",
                 ]
                 print(
-                    f"ADVARSEL Site {site} SW1: ERSPAN destination-porten kan bare tilhøre én "
+                    f"ADVARSEL Site {site} SW1: ERSPAN destination-porten kan bare tilhøre en "
                     "monitor-session. Lokal-only trafikk på HUB SW1 speiles derfor ikke i ERSPAN-modus. "
                     "Remote sites speiler klient-ingress og router-uplink-ingress for å redusere duplikater."
                 )
@@ -1255,19 +1277,25 @@ def config_vlan(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
     return info
 
 
-def _trunk_config(vlans, description, channel_group=None, trusted=True):
+def _trunk_config(vlans, description, channel_group=None, trusted=True, stp_guard=None):
+    """Build trunk config with optional per-interface STP guard."""
+    if stp_guard not in {None, "root", "loop"}:
+        raise ValueError(f"Ugyldig STP guard: {stp_guard}")
+
     lines = [
         description,
         "switchport trunk encapsulation dot1q",
         "switchport trunk native vlan 999",
         "switchport mode trunk",
+        "switchport nonegotiate",
         f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
     ]
     if trusted:
-        # Trust only flows toward the DHCP server / infrastructure side (uplinks).
         lines.extend(["ip dhcp snooping trust", "ip arp inspection trust"])
     if channel_group is not None:
         lines.append(f"channel-group {channel_group} mode active")
+    if stp_guard is not None:
+        lines.append(f"spanning-tree guard {stp_guard}")
     lines.extend(["no shutdown", "exit"])
     return lines
 
@@ -1320,6 +1348,13 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 )
             switch_link_vlans = _ordered_unique([*switch_link_vlans, rspan_vlan])
 
+        # Root Guard on downlinks assumes SW1 is the intended STP root.
+        # Make that role deterministic instead of relying on the lowest MAC.
+        if plan["is_primary_switch"] and switch_link_vlans:
+            sw_cfg[
+                f"spanning-tree vlan {','.join(map(str, switch_link_vlans))} root primary"
+            ] = []
+
         # No snooping/DAI on ISP transit, RSPAN or blackhole/native VLAN 999.
         excluded_inspection_vlans = {isp_vlan, 999}
         if span_mode_site == "ERSPAN":
@@ -1348,6 +1383,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 f"description UPLINK Port-channel{uplink_po} toward upstream switch "
                 f"for VLAN {','.join(map(str, switch_link_vlans))}",
                 trusted=True,
+                stp_guard="loop",
             )
             first_downlink_channel = 2
         else:
@@ -1361,6 +1397,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 uplink_vlans,
                 f"description {uplink_desc} for VLAN {','.join(map(str, uplink_vlans))}",
                 trusted=True,
+                stp_guard=None if plan["is_primary_switch"] else "loop",
             )
             first_downlink_channel = 1
 
@@ -1381,6 +1418,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     f"description DOWNLINK Port-channel{channel_id} for VLAN "
                     f"{','.join(map(str, switch_link_vlans))}",
                     trusted=False,
+                    stp_guard="root",
                 )
         else:
             for idx, ports in enumerate(plan["downlink_groups"], start=1):
@@ -1389,6 +1427,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     f"description DOWNLINK trunk {idx} for VLAN "
                     f"{','.join(map(str, switch_link_vlans))}",
                     trusted=False,
+                    stp_guard="root",
                 )
 
         # New num_ports_tot model: skipped ports are real physical interfaces,
@@ -1537,7 +1576,7 @@ def create_or_update_config_files(data):
 
 
 def create_sw_configs_main(file, config_file="site_switch_config.json"):
-    sites_sheets = load_workbook(file, read_only=True).sheetnames
+    sites_sheets = _site_sheet_names(file)
 
     # Fail fast before any config files are generated if enabled sites mix
     # SPAN/RSPAN/ERSPAN modes. Blank span_mode is allowed and means OFF.
