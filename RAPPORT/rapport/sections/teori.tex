@@ -76,7 +76,7 @@ Virtual Routing and Forwarding (VRF) gjør det mulig å opprettholde flere separ
 Generic Routing Encapsulation (GRE) kapsler inn en nettverkspakke i en ny GRE/IP-pakke slik at trafikk kan transporteres gjennom et IP-nettverk. GRE gir fleksibel tunnellering, men gir ikke i seg selv konfidensialitet eller kryptografisk beskyttelse. Derfor kombineres GRE ofte med IPsec når tunnelen må beskyttes. GRE er en sentral del av DMVPN \cite{rfc2784,cisco_dmvpn_current}.
 
 \subsubsection{DMVPN}
-Dynamic Multipoint Virtual Private Network (DMVPN) er en Cisco-arkitektur som kombinerer multipoint GRE (mGRE), NHRP og ruting for å opprette dynamiske forbindelser mellom hub- og spoke-rutere. IPsec kan i tillegg brukes for å beskytte trafikken kryptografisk. NHRP brukes blant annet til å knytte tunneladresser til underliggende NBMA-adresser og til å muliggjøre dynamiske spoke-to-spoke-forbindelser i fase 2 og 3. Faseforskjellene er oppsummert i tabell \ref{tab:dmvpn-faser} \cite{cisco_dmvpn_current,cisco_dmvpn_nhrp_phases}.
+Dynamic Multipoint Virtual Private Network (DMVPN) er en Cisco-arkitektur som kombinerer multipoint GRE (mGRE), NHRP og ruting for å opprette dynamiske forbindelser mellom hub- og spoke-rutere. IPsec kan i tillegg brukes for å beskytte trafikken kryptografisk. NHRP brukes blant annet til å knytte tunneladresser til underliggende NBMA-adresser og til å muliggjøre dynamiske spoke-to-spoke-forbindelser i fase 2 og 3. Faseforskjellene er oppsummert i tabell \ref{tab:dmvpn-faser} \cite{cisco_dmvpn_current, dmvpn_phase_3}.
 
 \begin{table}[H]
 \centering
