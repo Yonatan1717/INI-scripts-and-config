@@ -33,9 +33,13 @@ Spanning Tree Protocol (STP) brukes for å hindre lag-2-løkker i Ethernet-nettv
 \noindent 
 Ved klassisk STP brukes normalt 15 sekunder i listening og 15 sekunder i learning. Ved enkelte topologiendringer kan Max Age i tillegg påvirke konvergenstiden, slik at overgangen i verste fall kan ta rundt 50 sekunder. Raskere STP-varianter som RSTP bruker en annen tilstandsmodell og kan konvergere betydelig raskere \cite{forsvaret_nettverk_rolle1,cisco_stp_3850}.
 
-\subsubsection{BPDU Guard, PortFast og Port Security}
-BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, kan porten settes i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{forsvaret_nettverk_rolle1}.\\[1em]
-PortFast gjør at en edge-port kan gå direkte til forwarding i stedet for å vente gjennom de vanlige STP-tilstandene. Dette er egnet på porter mot enkeltstående endeenheter som klienter og servere, men ikke på porter som forventes å kobles til andre svitsjer \cite{forsvaret_nettverk_rolle1}.\\[1em]
+\subsubsection{BPDU Guard}
+BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, kan porten settes i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{forsvaret_nettverk_rolle1}.
+\subsection{Root Guard og Loop Guard}
+Root Guard og Loop Guard er mekanismer som beskytter spanning-tree-topologien mot uventede endringer. Root Guard hindrer at en designated port endrer rolle som følge av mottak av superior BPDUs, og setter porten i root-inconsistent-tilstand dersom dette skjer. Loop Guard beskytter root- og alternate-porter ved å hindre at de går over til forwarding dersom forventede BPDUs slutter å bli mottatt, noe som kan oppstå ved for eksempel en enveis linkfeil og føre til en nettverksloop \cite{forsvaret_nettverk_rolle1, nsm_n03}.
+\subsubsection{PortFast}
+PortFast gjør at en edge-port kan gå direkte til forwarding i stedet for å vente gjennom de vanlige STP-tilstandene. Dette er egnet på porter mot enkeltstående endeenheter som klienter og servere, men ikke på porter som forventes å kobles til andre svitsjer \cite{forsvaret_nettverk_rolle1}.
+\subsubsection{Port Security}
 Port Security begrenser hvilke eller hvor mange MAC-adresser som kan brukes på en svitsjeport. Ved brudd kan ukjent trafikk blant annet droppes, logges eller føre til at porten settes i error-disabled-tilstand, avhengig av valgt violation-modus. Port Security gir dermed en ekstra kontroll på klientporter, men er ikke en erstatning for sterk klientautentisering \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{DAI}

@@ -32,6 +32,7 @@ def _site_sheet_names(file):
         if str(name).strip().upper() != FLOW_POLICY_SHEET
     ]
 
+
 def _extract_table_blocks(df):
     """Return contiguous non-empty blocks as DataFrames with first row as header."""
     blocks = []
