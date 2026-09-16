@@ -281,6 +281,18 @@ def summarize_router(site_key: str, site_data: dict[str, Any], router_root: dict
                 f"GW {info.get('default-router')}, reservert til {info.get('ip_res_to')}{dns_text}"
             )
 
+    flow_policy = network_info.get("flow_policy", {})
+    if isinstance(flow_policy, dict) and flow_policy:
+        lines.append("  Trafikkpolicy (extended ingress ACL):")
+        for source, info in sorted(flow_policy.items(), key=lambda x: natural_key(x[0])):
+            if not isinstance(info, dict):
+                continue
+            interfaces = ", ".join(info.get("interfaces", [])) or "ukjent interface"
+            lines.append(
+                f"    - {source}: {info.get('acl')} på {interfaces} "
+                f"({info.get('rules', '?')} regler + default deny)"
+            )
+
     tunnels = []
     for name, info in network_info.items():
         if str(name).lower().startswith("tunnel") and isinstance(info, dict):
@@ -290,10 +302,43 @@ def summarize_router(site_key: str, site_data: dict[str, Any], router_root: dict
         lines.append("  Tunneler:")
         for name, info in sorted(tunnels, key=lambda x: natural_key(x[0])):
             ipsec = "IPsec" if info.get("ipsec") else "uten IPsec"
+            tunnel_cfg = config.get(f"interface {name}", [])
+            phase3 = ""
+            if isinstance(tunnel_cfg, list):
+                if "ip nhrp redirect" in tunnel_cfg:
+                    phase3 = ", Phase 3 HUB/redirect"
+                elif "ip nhrp shortcut" in tunnel_cfg:
+                    phase3 = ", Phase 3 SPOKE/shortcut"
             lines.append(
                 f"    - {name}: {info.get('vrf')} {info.get('ip address')} "
-                f"({info.get('mode')}), source {info.get('source')}, {ipsec}"
+                f"({info.get('mode')}), source {info.get('source')}, {ipsec}{phase3}"
             )
+
+    hardening = []
+    if "no ip source-route" in config:
+        hardening.append("IP source-route av")
+    if config_has_key(config, "aaa accounting commands 15 "):
+        hardening.append("AAA accounting")
+    if config_has_key(config, "logging buffered "):
+        hardening.append("buffered logging")
+    if any(
+        isinstance(v, list) and "no ip redirects" in v
+        for v in config.values()
+    ):
+        hardening.append("ICMP redirects av")
+    if any(
+        isinstance(v, list) and "no ip proxy-arp" in v
+        for v in config.values()
+    ):
+        hardening.append("Proxy ARP av")
+    if any(
+        isinstance(v, list)
+        and any(isinstance(x, str) and x.startswith("ip verify unicast source reachable-via") for x in v)
+        for v in config.values()
+    ):
+        hardening.append("uRPF")
+    if hardening:
+        lines.append(f"  Hardening: {', '.join(hardening)}")
 
     return lines
 
@@ -516,8 +561,18 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         security.append("Port-security")
     if any(isinstance(v, list) and "spanning-tree bpduguard enable" in v for v in config.values()):
         security.append("BPDU Guard")
+    if any(isinstance(v, list) and "spanning-tree guard root" in v for v in config.values()):
+        security.append("Root Guard")
+    if any(isinstance(v, list) and "spanning-tree guard loop" in v for v in config.values()):
+        security.append("Loop Guard")
+    if any(isinstance(v, list) and "switchport nonegotiate" in v for v in config.values()):
+        security.append("DTP av")
+    if "vtp mode transparent" in config:
+        security.append("VTP transparent")
     if "aaa new-model" in config:
         security.append("TACACS+/AAA")
+    if config_has_key(config, "aaa accounting commands 15 "):
+        security.append("AAA accounting")
     if "ip ssh version 2" in config:
         security.append("SSH")
     if config_has_key(config, "logging host "):

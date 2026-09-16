@@ -1,10 +1,10 @@
 \section{Teori}
 
 \subsection{DHCP snooping}
-DHCP snooping er en sikkerhetsfunksjon som filtrerer DHCP-meldinger på lag 2 og skiller mellom betrodde og ubetrodde porter. Porter mot en legitim DHCP-server eller annen betrodd infrastruktur kan markeres som trusted, mens klientporter normalt er untrusted. DHCP-svar fra ubetrodde porter kan dermed blokkeres. Samtidig bygger svitsjen en bindingstabell som knytter sammen blant annet IP-adresse, MAC-adresse, VLAN og fysisk port. Denne tabellen kan også brukes av andre sikkerhetsfunksjoner som DAI og IPSG \cite{cisco_dhcp_snooping}. 
+DHCP snooping er en sikkerhetsfunksjon som filtrerer DHCP-meldinger på lag 2 og skiller mellom betrodde og ubetrodde porter. Porter mot en legitim DHCP-server eller annen betrodd infrastruktur kan markeres som trusted, mens klientporter normalt er untrusted. DHCP-svar fra ubetrodde porter kan dermed blokkeres. Samtidig bygger svitsjen en bindingstabell som knytter sammen blant annet IP-adresse, MAC-adresse, VLAN og fysisk port. Denne tabellen kan også brukes av andre sikkerhetsfunksjoner som DAI og IPSG \cite{forsvaret_nettverk_rolle1}. 
 
 \subsubsection{IPSG}
-IP Source Guard (IPSG) begrenser IP-trafikk på lag-2-porter ved å kontrollere kildeadressen mot DHCP snooping-bindingstabellen eller manuelt konfigurerte IP-bindinger. Trafikk med en kilde-IP som ikke samsvarer med en gyldig binding kan blokkeres. IPSG reduserer dermed muligheten for IP-spoofing på klientporter og fungerer spesielt godt sammen med DHCP snooping \cite{cisco_ipsg}.
+IP Source Guard (IPSG) begrenser IP-trafikk på lag-2-porter ved å kontrollere kildeadressen mot DHCP snooping-bindingstabellen eller manuelt konfigurerte IP-bindinger. Trafikk med en kilde-IP som ikke samsvarer med en gyldig binding kan blokkeres. IPSG reduserer dermed muligheten for IP-spoofing på klientporter og fungerer spesielt godt sammen med DHCP snooping \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{STP}
 Spanning Tree Protocol (STP) brukes for å hindre lag-2-løkker i Ethernet-nettverk. Protokollen beregner en løkkefri topologi og setter redundante veier i en ikke-videresendende tilstand. Selv om nettverket i utgangspunktet er bygget som en trestruktur uten redundante lenker, er STP fortsatt relevant som beskyttelse mot utilsiktede løkker som kan oppstå ved feilkobling eller senere endringer. STP har følgende porttilstander \cite{cisco_stp_3850}:\\[0.1em]
@@ -31,24 +31,28 @@ Spanning Tree Protocol (STP) brukes for å hindre lag-2-løkker i Ethernet-nettv
 \end{tabular}
 \end{table}
 \noindent 
-Ved klassisk STP brukes normalt 15 sekunder i listening og 15 sekunder i learning. Ved enkelte topologiendringer kan Max Age i tillegg påvirke konvergenstiden, slik at overgangen i verste fall kan ta rundt 50 sekunder. Raskere STP-varianter som RSTP bruker en annen tilstandsmodell og kan konvergere betydelig raskere \cite{cisco_stp_timers,cisco_stp_3850}.
+Ved klassisk STP brukes normalt 15 sekunder i listening og 15 sekunder i learning. Ved enkelte topologiendringer kan Max Age i tillegg påvirke konvergenstiden, slik at overgangen i verste fall kan ta rundt 50 sekunder. Raskere STP-varianter som RSTP bruker en annen tilstandsmodell og kan konvergere betydelig raskere \cite{forsvaret_nettverk_rolle1,cisco_stp_3850}.
 
-\subsubsection{BPDU Guard, PortFast og Port Security}
-BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, kan porten settes i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{cisco_stp_optional}.\\[1em]
-PortFast gjør at en edge-port kan gå direkte til forwarding i stedet for å vente gjennom de vanlige STP-tilstandene. Dette er egnet på porter mot enkeltstående endeenheter som klienter og servere, men ikke på porter som forventes å kobles til andre svitsjer \cite{cisco_stp_optional}.\\[1em]
-Port Security begrenser hvilke eller hvor mange MAC-adresser som kan brukes på en svitsjeport. Ved brudd kan ukjent trafikk blant annet droppes, logges eller føre til at porten settes i error-disabled-tilstand, avhengig av valgt violation-modus. Port Security gir dermed en ekstra kontroll på klientporter, men er ikke en erstatning for sterk klientautentisering \cite{cisco_port_security}.
+\subsubsection{BPDU Guard}
+BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, kan porten settes i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{forsvaret_nettverk_rolle1}.
+\subsection{Root Guard og Loop Guard}
+Root Guard og Loop Guard er mekanismer som beskytter spanning-tree-topologien mot uventede endringer. Root Guard hindrer at en designated port endrer rolle som følge av mottak av superior BPDUs, og setter porten i root-inconsistent-tilstand dersom dette skjer. Loop Guard beskytter root- og alternate-porter ved å hindre at de går over til forwarding dersom forventede BPDUs slutter å bli mottatt, noe som kan oppstå ved for eksempel en enveis linkfeil og føre til en nettverksloop \cite{forsvaret_nettverk_rolle1, nsm_n03}.
+\subsubsection{PortFast}
+PortFast gjør at en edge-port kan gå direkte til forwarding i stedet for å vente gjennom de vanlige STP-tilstandene. Dette er egnet på porter mot enkeltstående endeenheter som klienter og servere, men ikke på porter som forventes å kobles til andre svitsjer \cite{forsvaret_nettverk_rolle1}.
+\subsubsection{Port Security}
+Port Security begrenser hvilke eller hvor mange MAC-adresser som kan brukes på en svitsjeport. Ved brudd kan ukjent trafikk blant annet droppes, logges eller føre til at porten settes i error-disabled-tilstand, avhengig av valgt violation-modus. Port Security gir dermed en ekstra kontroll på klientporter, men er ikke en erstatning for sterk klientautentisering \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{DAI}
-Dynamic ARP Inspection (DAI) beskytter mot ugyldige eller forfalskede ARP-meldinger. På ubetrodde porter valideres ARP-trafikk mot kjente IP- og MAC-bindinger, vanligvis fra DHCP snooping-bindingstabellen. ARP-meldinger som ikke samsvarer med en gyldig binding kan droppes. På betrodde porter videresendes ARP uten den samme kontrollen. I miljøer med statiske adresser kan ARP ACL-er brukes som et alternativ til dynamiske DHCP-bindinger \cite{cisco_dai}.
+Dynamic ARP Inspection (DAI) beskytter mot ugyldige eller forfalskede ARP-meldinger. På ubetrodde porter valideres ARP-trafikk mot kjente IP- og MAC-bindinger, vanligvis fra DHCP snooping-bindingstabellen. ARP-meldinger som ikke samsvarer med en gyldig binding kan droppes. På betrodde porter videresendes ARP uten den samme kontrollen. I miljøer med statiske adresser kan ARP ACL-er brukes som et alternativ til dynamiske DHCP-bindinger \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{Sikkerhetsovervåkning og logging}
-Sikkerhetsovervåkning og logging brukes for å oppdage, analysere og følge opp hendelser i et nettverk. Ved å samle logger og nettverkshendelser sentralt blir det enklere å korrelere aktivitet fra flere enheter, oppdage avvik og gjennomføre feilsøking eller hendelseshåndtering \cite{nist_log_management}.
+Sikkerhetsovervåkning og logging brukes for å oppdage, analysere og følge opp hendelser i et nettverk. Ved å samle logger og nettverkshendelser sentralt blir det enklere å korrelere aktivitet fra flere enheter, oppdage avvik og gjennomføre feilsøking eller hendelseshåndtering \cite{nsm_n03}.
 
 \subsubsection{Suricata og Security Onion}
 Suricata er en nettverksbasert IDS/IPS-motor som analyserer trafikk mot regler og signaturer og kan generere varsler og strukturerte hendelser, blant annet i EVE JSON-format. Security Onion er en plattform for sikkerhetsovervåkning som blant annet kan bruke Suricata til signaturbasert nettverksdeteksjon og kombinere dette med logging, nettverksmetadata og analyseverktøy. Ved passiv overvåkning brukes normalt et eget sniffing-interface som mottar kopiert trafikk fra for eksempel en TAP- eller SPAN-port \cite{suricata_eve,security_onion_intro}.
 
 \subsubsection{Syslog}
-Syslog er en standard for formatering og transport av loggmeldinger fra blant annet nettverksenheter til en sentral loggtjeneste. Sentral innsamling gjør det enklere å overvåke, søke i og korrelere hendelser fra flere systemer. Syslog-meldinger kan inneholde informasjon om eksempelvis systemstatus, konfigurasjonsendringer og sikkerhetsrelaterte hendelser \cite{rfc5424}.
+Syslog brukes ofte for logging fra nettverksenheter til en sentral loggtjeneste. Sentral innsamling gjør det enklere å overvåke og korrelere hendelser fra flere systemer. NSM anbefaler at nettverksenheter sender logger til dedikerte loggverter, at meldingene tidsstemples og at loggingen omfatter blant annet systemstatus og konfigurasjonsaktivitet \cite{nsm_n03}.
 
 \subsubsection{SPAN, RSPAN og ERSPAN}
 SPAN (Switched Port Analyzer) speiler valgt trafikk fra porter eller VLAN til en lokal monitorport, slik at trafikken kan analyseres av en sensor uten å ligge direkte i trafikkflyten \cite{cisco_span_rspan_3850}.\\[1em]
@@ -56,23 +60,23 @@ RSPAN (Remote Switched Port Analyzer) utvider dette ved å transportere speilet 
 ERSPAN (Encapsulated Remote Switched Port Analyzer) kapsler speilet trafikk inn i GRE og transporterer den over et rutet IP-nettverk til en ERSPAN-mottaker. Dette gjør det mulig å samle speilet trafikk fra andre lokasjoner uten å strekke et eget lag-2-RSPAN-VLAN mellom lokasjonene.\cite{cisco_erspan_3850}
 
 \subsection{EtherChannel}
-EtherChannel kombinerer flere fysiske Ethernet-lenker til en logisk forbindelse. Dette kan gi høyere samlet kapasitet og redundans dersom en medlemslenke faller ut. Trafikk fordeles mellom medlemslenkene ved hjelp av en lastfordelingsmekanisme. EtherChannel kan etableres med blant annet PAgP (Port Aggregation Protocol) eller LACP (Link Aggregation Control Protocol). PAgP er Cisco-proprietær, mens LACP er standardisert og kan brukes mellom kompatibelt utstyr fra ulike leverandører \cite{cisco_etherchannel_3850}.
+EtherChannel kombinerer flere fysiske Ethernet-lenker til en logisk forbindelse. Dette kan gi høyere samlet kapasitet og redundans dersom en medlemslenke faller ut. Trafikk fordeles mellom medlemslenkene ved hjelp av en lastfordelingsmekanisme. EtherChannel kan etableres med blant annet PAgP (Port Aggregation Protocol) eller LACP (Link Aggregation Control Protocol). PAgP er Cisco-proprietær, mens LACP er standardisert og kan brukes mellom kompatibelt utstyr fra ulike leverandører \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{SSH}
-Secure Shell (SSH) etablerer en beskyttet kanal for fjernadministrasjon over et usikkert nettverk. Protokollen gir mekanismer for blant annet konfidensialitet, integritet og autentisering, og brukes derfor som et sikrere alternativ til ukrypterte fjernadministrasjonsprotokoller som Telnet \cite{rfc4251}.
+Secure Shell (SSH) brukes til kryptert fjernadministrasjon av nettverksenheter. Dette gjør SSH til et sikrere alternativ til Telnet, som sender trafikken ukryptert. Ved fjernadministrasjon anbefales det derfor å deaktivere Telnet og benytte SSH \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{NTP}
-Network Time Protocol (NTP) brukes til å synkronisere klokker mellom systemer i et IP-nettverk. Korrekt og konsistent tid er spesielt viktig for tidsstempling og korrelasjon av logger og sikkerhetshendelser. NTP støtter blant annet klient-/server- og peer-kommunikasjon \cite{rfc5905}.
+Network Time Protocol (NTP) brukes til å synkronisere klokker mellom systemer i et IP-nettverk. Korrekt og konsistent tid er spesielt viktig for administrasjon, feilsøking, hendelseshåndtering og korrelasjon av logger og sikkerhetshendelser \cite{nsm_n03}.
 
 \subsection{Tunnellering og VRF-Lite}
 \subsubsection{VRF-Lite}
-Virtual Routing and Forwarding (VRF) gjør det mulig å opprettholde flere separate rutingtabeller på samme fysiske ruter eller lag-3-svitsj. VRF-Lite bruker denne separasjonen lokalt uten at MPLS er nødvendig på selve enheten. Trafikk i forskjellige VRF-er behandles derfor som separate logiske rutingdomener selv om de deler fysisk maskinvare \cite{cisco_vrf_lite}.
+Virtual Routing and Forwarding (VRF) gjør det mulig å opprettholde flere separate rutingtabeller på samme fysiske ruter eller lag-3-svitsj. VRF-Lite bruker denne separasjonen lokalt uten at MPLS er nødvendig på selve enheten. Trafikk i forskjellige VRF-er behandles derfor som separate logiske rutingdomener selv om de deler fysisk maskinvare \cite{forsvaret_nettverk_rolle1}.
 
 \subsubsection{GRE}
 Generic Routing Encapsulation (GRE) kapsler inn en nettverkspakke i en ny GRE/IP-pakke slik at trafikk kan transporteres gjennom et IP-nettverk. GRE gir fleksibel tunnellering, men gir ikke i seg selv konfidensialitet eller kryptografisk beskyttelse. Derfor kombineres GRE ofte med IPsec når tunnelen må beskyttes. GRE er en sentral del av DMVPN \cite{rfc2784,cisco_dmvpn_current}.
 
 \subsubsection{DMVPN}
-Dynamic Multipoint Virtual Private Network (DMVPN) er en Cisco-arkitektur som kombinerer multipoint GRE (mGRE), NHRP og ruting for å opprette dynamiske forbindelser mellom hub- og spoke-rutere. IPsec kan i tillegg brukes for å beskytte trafikken kryptografisk. NHRP brukes blant annet til å knytte tunneladresser til underliggende NBMA-adresser og til å muliggjøre dynamiske spoke-to-spoke-forbindelser i fase 2 og 3. Faseforskjellene er oppsummert i tabell \ref{tab:dmvpn-faser} \cite{cisco_dmvpn_current,cisco_dmvpn_nhrp_phases}.
+Dynamic Multipoint Virtual Private Network (DMVPN) er en Cisco-arkitektur som kombinerer multipoint GRE (mGRE), NHRP og ruting for å opprette dynamiske forbindelser mellom hub- og spoke-rutere. IPsec kan i tillegg brukes for å beskytte trafikken kryptografisk. NHRP brukes blant annet til å knytte tunneladresser til underliggende NBMA-adresser og til å muliggjøre dynamiske spoke-to-spoke-forbindelser i fase 2 og 3. Faseforskjellene er oppsummert i tabell \ref{tab:dmvpn-faser} \cite{cisco_dmvpn_current, dmvpn_phase_3}.
 
 \begin{table}[H]
 \centering
@@ -118,7 +122,10 @@ Prosjektet benytter IKEv2 for å etablere og vedlikeholde sikkerhetsforbindelser
 \end{table}
 
 \subsection{ACL}
-Access Control Lists (ACL-er) brukes til å filtrere trafikk etter definerte regler. Avhengig av ACL-type kan kriteriene blant annet være kilde- og destinasjons-IP, protokoll og transportlagsport. ACL-er kan brukes på rutere og lag-3-svitsjer for å begrense hvilke trafikkstrømmer som får passere mellom nett eller sikkerhetssoner. Regler behandles i rekkefølge, og trafikk som ikke eksplisitt tillates vil normalt treffes av en implisitt deny på slutten av ACL-en \cite{cisco_acl}
+Access Control Lists (ACL-er) brukes til å filtrere trafikk etter definerte regler. Avhengig av ACL-type kan kriteriene blant annet være kilde- og destinasjons-IP, protokoll og transportlagsport. ACL-er kan brukes på rutere og lag-3-svitsjer for å begrense hvilke trafikkstrømmer som får passere mellom nett eller sikkerhetssoner. Regler behandles i rekkefølge, og trafikk som ikke eksplisitt tillates vil normalt treffes av en implisitt deny på slutten av ACL-en \cite{forsvaret_nettverk_rolle1}
 
 \subsection{PAT}
 Port Address Translation (PAT), også kalt NAT overload, gjør det mulig for flere interne enheter å dele en global IPv4-adresse. Oversettelsen skiller samtidige forbindelser ved hjelp av transportlagsidentifikatorer som portnumre, slik at svartrafikk kan knyttes til riktig intern klient. PAT reduserer behovet for globale IPv4-adresser, men er i seg selv ikke en erstatning for en brannmur eller eksplisitt tilgangskontroll \cite{cisco_pat}.
+
+\subsection{QoS}
+Quality of Service (QoS) refererer til mekanismer som klassifiserer og prioriterer ulike typer nettverkstrafikk for å sikre ønsket ytelse. Dette kan for eksempel innebære at tale- og videotrafikk prioriteres foran mindre tidskritisk trafikk, som filoverføringer. QoS kan implementeres ved hjelp av blant annet trafikkmerking, køhåndtering og båndbreddekontroll, og er spesielt viktig i nettverk med begrenset kapasitet eller høy trafikkbelastning \cite{cisco_qos}.

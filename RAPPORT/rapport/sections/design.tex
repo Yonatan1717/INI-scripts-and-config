@@ -1,14 +1,375 @@
 \section{Design}
+Nettverket er bygget med VRF-Lite for lokal og ende-til-ende logisk segmentering, mens DMVPN benyttes som overlay mellom lokasjonene. Trafikk som krever konfidensialitet og integritetsbeskyttelse transporteres gjennom IPsec-beskyttede DMVPN-tunneler. ERSPAN benyttes for å transportere speilet nettverkstrafikk fra spoke-lokasjonene til den sentrale overvåkningsløsningen i BNHQ.
 \subsection{Designkrav}
-\dots
+{\small
+\setlength{\tabcolsep}{4pt}
+\newcommand{\headercenter}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\centering\textbf{#1}}}
+\newcommand{\headerleft}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\raggedright\textbf{#1}}}
+\begin{longtable}{
+    |>{\centering\arraybackslash}p{0.6cm}
+    |>{\raggedright\arraybackslash}p{4.2cm}
+    |>{\centering\arraybackslash}p{0.7cm}
+    |>{\raggedright\arraybackslash}p{3.5cm}
+    |>{\raggedright\arraybackslash}p{4.2cm}|
+}
+\caption{Krav og tilhørende designprinsipper for nettverksløsning.}
+\label{tab:designkrav}\\
+\hline
+\headercenter{ID} &
+\headerleft{Krav} &
+\headercenter{Pri.} &
+\headerleft{Designprinsipp} &
+\headerleft{Begrunnelse / tiltak} \\
+\hline
+\endfirsthead
+
+\caption[]{Krav og tilhørende designprinsipper for foreslått nettverksløsning.}\\
+\hline
+\headercenter{ID} &
+\headerleft{Krav} &
+\headercenter{Pri.} &
+\headerleft{Designprinsipp} &
+\headerleft{Begrunnelse / tiltak} \\
+\hline
+\endhead
+
+\hline
+\multicolumn{5}{r}{\small Fortsetter på neste side} \\
+\endfoot
+
+\hline
+\endlastfoot
+
+1 &
+Nettverket skal segmenteres mellom ulike tjenester og brukergrupper. &
+\cellcolor{red!60}H &
+Kontrollert, sikker, fleksibel. &
+Segmentering begrenser trafikk mellom tjenester og reduserer konsekvensene dersom en klient eller del av nettverket kompromitteres. \\
+\hline
+
+2 &
+Trafikk mellom segmenter skal begrenses til kun nødvendige tjenester. &
+\cellcolor{red!60}H &
+Kontrollert, minimert, sikker. &
+ACL-er basert på en definert trafikkpolicy sikrer at kun forventet og nødvendig trafikk tillates mellom nettverk og tjenester. \\
+\hline
+
+3 &
+Administrasjon av nettverksenheter skal kun være tilgjengelig fra autoriserte administrasjonsnett. &
+\cellcolor{red!60}H &
+Kontrollert, sikker, sporbar. &
+Eget MGMT-nett, SSH og tilgangskontroll reduserer eksponeringen av administrasjonsgrensesnitt og hindrer administrasjon fra ordinære klientnett. \\
+\hline
+
+4 &
+Administrativ tilgang skal autentiseres og administreres sentralt. &
+\cellcolor{orange!60}M &
+Sporbar, kontrollert, håndterbar. &
+Sentral AAA/TACACS+ gjør det mulig å kontrollere hvem som får administrativ tilgang og knytte aktivitet til individuelle brukere. \\
+\hline
+
+5 &
+Nettverket skal beskytte mot uautoriserte eller feilkonfigurerte klienter på lokale nett. &
+\cellcolor{red!60}H &
+Sikker, robust, motstandsdyktig. &
+DHCP Snooping, Dynamic ARP Inspection, IP Source Guard og Port Security reduserer risikoen for blant annet falske DHCP-servere og ARP-spoofing. \\
+\hline
+
+6 &
+Nettverket skal være beskyttet mot uønskede Layer~2-løkker og uautoriserte endringer i STP-topologien. &
+\cellcolor{red!60}H &
+Robust, motstandsdyktig, tilgjengelig. &
+BPDU Guard, Root Guard og Loop Guard reduserer risikoen for at feil eller uautoriserte svitsjer påvirker spanning-tree-topologien og tilgjengeligheten. \\
+\hline
+
+7 &
+Nettverksenheter skal sende logger til et sentralt loggsystem. &
+\cellcolor{orange!60}M &
+Sporbar, overvåkbar, beredskapsklar. &
+Sentral logging gjør det enklere å oppdage hendelser, analysere feil og sammenstille aktivitet på tvers av nettverksenheter. \\
+\hline
+
+8 &
+Systemklokkene på nettverksenhetene skal synkroniseres. &
+\cellcolor{orange!60}M &
+Sporbar, konsistent, håndterbar. &
+Felles tidsgrunnlag gjør det mulig å korrelere logger og hendelser mellom forskjellige enheter ved feilsøking og hendelseshåndtering. \\
+\hline
+
+9 &
+Nettverkstrafikk skal kunne overvåkes sentralt for å oppdage mistenkelig aktivitet. &
+\cellcolor{orange!60}M &
+Overvåkbar, sporbar, sikker. &
+SPAN, RSPAN eller ERSPAN gjør det mulig å sende relevant nettverkstrafikk til en sentral IDS-løsning som Suricata eller mer avanserte overvåkingsverktøy som Security Onion. \\
+\hline
+
+10 &
+Det nye nettverket skal opprettholde dagens funksjonalitet for brukerne. &
+\cellcolor{red!60}H &
+Kapabel, tilgjengelig, kompatibel. &
+Sikkerhetstiltak skal innføres uten at nødvendige tjenester som telefoni, PA-anlegg, arbeidsnett eller velferdsnett mister nødvendig funksjonalitet. \\
+\hline
+
+11 &
+Løsningen skal i størst mulig grad benytte eksisterende maskinvare, programvare og lisenser. &
+\cellcolor{red!60}H &
+Kostnadseffektiv, gjenbrukbar, kompatibel. &
+Gjenbruk av eksisterende Cisco-utstyr og tilgjengelige funksjoner reduserer behovet for nyanskaffelser og gjør løsningen mulig innenfor eksisterende rammer. \\
+\hline
+
+12 &
+Eksisterende forbindelse levert av det litauiske forsvaret skal kunne beholdes uten endringer. &
+\cellcolor{red!60}H &
+Kompatibel, interoperabel, fleksibel. &
+Den nye lokale nettverksarkitekturen må kunne fungere over eksisterende Layer~3-VPN uten å kreve endringer hos ekstern leverandør. \\
+\hline
+
+13 &
+Nye lokasjoner og nettverkstjenester skal kunne etableres med begrenset manuelt konfigurasjonsarbeid. &
+\cellcolor{orange!60}M &
+Skalerbar, automatiserbar, effektiv. &
+Automatisk generering av konfigurasjon fra en standardisert Excel-mal reduserer manuelt arbeid og gjør det enklere å etablere nye sites raskt og konsistent. \\
+\hline
+
+14 &
+Like nettverksenheter skal konfigureres etter en felles sikkerhetsbaseline. &
+\cellcolor{orange!60}M &
+Standardisert, konsistent, vedlikeholdbar. &
+En felles baseline reduserer konfigurasjonsavvik og sikrer at grunnleggende sikkerhetstiltak implementeres likt på tvers av lokasjoner. \\
+\hline
+
+15 &
+Løsningen skal være dokumentert slik at den kan driftes og videreføres av senere kontingenter. &
+\cellcolor{red!60}H &
+Dokumenterbar, forståelig, vedlikeholdbar. &
+Tydelig dokumentasjon av topologi, IP-plan, tjenester og konfigurasjonsprinsipper reduserer personavhengighet og gjør videre drift og utvikling enklere. \\
+\hline
+
+16 &
+Endringer skal kunne testes og valideres før de innføres i produksjonsnettet. &
+\cellcolor{red!60}H &
+Testbar, kontrollert, sikker. &
+Testing i et separat miljø reduserer risikoen for at feilkonfigurasjon eller nye sikkerhetstiltak påvirker operative tjenester. \\
+\hline
+
+17 &
+Nettverket skal ivareta konfidensialiteten til informasjon og tjenester. &
+\cellcolor{red!60}H &
+Konfidensialitet. &
+Segmentering, tilgangskontroll og kryptering med blant annet SSH og IPsec reduserer risikoen for at uvedkommende får tilgang til informasjon eller administrative grensesnitt. \\
+\hline
+
+18 &
+Nettverket skal ivareta integriteten til informasjon og nettverkstrafikk. &
+\cellcolor{red!60}H &
+Integritet. &
+Autentisering og kryptografiske mekanismer bidrar til å beskytte data mot uautoriserte endringer. I tillegg reduserer sikkerhetsfunksjoner som Dynamic ARP Inspection, DHCP Snooping og IP Source Guard risikoen for spoofing og manipulering av lokal nettverkstrafikk. \\
+\hline
+
+19 &
+Nettverket skal ivareta tilgjengeligheten til nødvendige tjenester. &
+\cellcolor{red!60}H &
+Tilgjengelighet. &
+Mekanismer som EtherChannel, STP-beskyttelse og QoS bidrar til å redusere konsekvensene av feil, forhindre nettverksløkker og prioritere kritisk trafikk ved begrenset kapasitet. \\
+\hline
+
+\end{longtable}
+}
+
 \subsection{IP-addresseringsplan}
-\dots
+\subsubsection{Lokal nettverks plan}
+Tabell \ref{tab:ipplan-site-x} viser IP-adresseplanen for det lokale nettverket på Site X. Kolonnen \textbf{Res.} angir hvor mange adresser som holdes utenfor DHCP-poolen. Dette benyttes i MGMT-nettet, hvor nettverksenheter tildeles faste administrasjonsadresser, og i MONITORING-nettet dersom ERSPAN benyttes. Antallet reserverte adresser kan tilpasses i Excel-malen etter antall nettverksenheter på lokasjonen.
+\begin{table}[H]
+    \centering
+    \caption{IP-adresseplan for det lokale nettverket på Site X.}
+    \label{tab:ipplan-site-x}
+    \small
+    \renewcommand{\arraystretch}{1.3}
+    \setlength{\tabcolsep}{4pt}
+    \rowcolors{2}{lightgreen}{white}
+
+    \begin{tabular}{
+        >{\bfseries}l
+        c
+        l
+        l
+        l
+        c
+    }
+        \toprule
+        \rowcolor{tablegreen}\color{white}
+        \color{white}\textbf{VRF} &
+        \color{white}\textbf{VLAN} &
+        \color{white}\textbf{Nett-ID} &
+        \color{white}\textbf{Gateway} &
+        \color{white}\textbf{Adresseområde} &
+        \color{white}\textbf{Res.} \\
+        \midrule
+
+        MGMT       & 10 & 10.X.10.0/24 & 10.X.10.1 & 10.X.10.1 -- 10.X.10.254 & 40 \\
+        INET       & 20 & 10.X.20.0/24 & 10.X.20.1 & 10.X.20.1 -- 10.X.20.254 & -- \\
+        UNET       & 30 & 10.X.30.0/24 & 10.X.30.1 & 10.X.30.1 -- 10.X.30.254 & -- \\
+        PA         & 40 & 10.X.40.0/24 & 10.X.40.1 & 10.X.40.1 -- 10.X.40.254 & -- \\
+        MONITORING & 50 & 10.X.50.0/24 & 10.X.50.1 & 10.X.50.1 -- 10.X.50.254 & 40 \\
+
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+\noindent
+Nettverket er fordelt ut ifra 10.0.0.0/8-adresseområdet. Hvor andre okttett beskriver site og tredje okttett beskriver lanet. Generatoeren støtter dermed:
+\[
+    2^8 - 1 = 255
+\]
+individuelle LAN og Sites for denne spsifkke ip fordeling.
+Antall ledige Host-adresser i hver subnett kan beregnes ved å trekke fra antall reserverte adresser fra det totale antallet adresser i subnettet:
+\[
+    A_\text{ledige} = A_{max} - A_\text{res}
+\] 
+For eksempel for MGMT-nettet har man:
+\[
+    A_\text{ledige} = 254 - 40 = 216
+\]
+\subsubsection{Loopback- og DMVPN-plan}
+Tabell \ref{tab:loopback-site-x} viser loopback-planen for Site X.
+Loopback-adressene benyttes som stabile adresser for de ulike VRF-ene.
+Egne source-loopbacks benyttes som kildeadresser for DMVPN-tunnelene.
+\begin{table}[H]
+    \centering
+    \caption{Loopback-adresser benyttet på Site X.}
+    \label{tab:loopback-site-x}
+    \small
+    \renewcommand{\arraystretch}{1.3}
+    \setlength{\tabcolsep}{8pt}
+    \rowcolors{2}{lightgreen}{white}
+
+    \begin{tabular}{lll}
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Tjeneste} &
+        \color{white}\textbf{Vanlig loopback} &
+        \color{white}\textbf{DMVPN source-loopback} \\
+        \midrule
+
+        MGMT       & Loopback10 & Loopback11 \\
+        INET       & Loopback20 & Loopback21 \\
+        UNET       & Loopback30 & Loopback31 \\
+        PA         & Loopback40 & Loopback41 \\
+        MONITORING & Loopback50 & Loopback51 \\
+
+        \bottomrule
+    \end{tabular}
+
+    \rowcolors{1}{}{}
+\end{table}
+\begin{table}[H]
+    \centering
+    \caption{DMVPN-adresseplan for Site X.}
+    \label{tab:dmvpn-site-x}
+    \small
+    \renewcommand{\arraystretch}{1.3}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+
+    \begin{tabular}{
+        l
+        >{\bfseries}l
+        l
+        l
+        c
+        c
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Tunnel} &
+        \color{white}\textbf{VRF} &
+        \color{white}\textbf{Tunnel-IP} &
+        \color{white}\textbf{Tunnel source} &
+        \color{white}\textbf{NHRP-ID} &
+        \color{white}\textbf{IPsec} \\
+        \midrule
+
+        Tunnel10 & MGMT       & 172.16.10.X/24 & Loopback11 & 10 & Ja \\
+        Tunnel20 & INET       & 172.16.20.X/24 & Loopback21 & 20 & Nei \\
+        Tunnel30 & UNET       & 172.16.30.X/24 & Loopback31 & 30 & Ja \\
+        Tunnel40 & PA         & 172.16.40.X/24 & Loopback41 & 40 & Ja \\
+        Tunnel50 & MONITORING & 172.16.50.X/24 & Loopback51 & 50 & Ja \\
+
+        \bottomrule
+    \end{tabular}
+
+    \rowcolors{1}{}{}
+\end{table}
+\subsubsection{QoS}
+Tabell \ref{tab:qos-site-x} viser QoS-klassifiseringen for Site X. 
+Trafikken klassifiseres og merkes basert på tilhørende VRF.
+Totalt 75~\% av båndbredden fordeles mellom de definerte trafikkklassene
+basert på deres prioriteringsvekt, mens 25~\% reserveres til
+\texttt{class-default}. For en klasse $i$ beregnes minimum båndbreddeandelen som:
+\[
+B_i = \frac{P_i}{\sum P}\cdot 75\%.
+\]
+\begin{table}[H]
+    \centering
+    \caption{QoS-vekting og båndbreddefordeling for Site X.}
+    \label{tab:qos-site-x}
+    \small
+    \renewcommand{\arraystretch}{1.3}
+    \setlength{\tabcolsep}{7pt}
+    \rowcolors{2}{lightgreen}{white}
+
+    \begin{tabular}{lccc}
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{VRF} &
+        \color{white}\textbf{DSCP} &
+        \color{white}\textbf{Vekt} &
+        \color{white}\textbf{Båndbreddeandel} \\
+        \midrule
+
+        MGMT          & AF21 & 5  & 11\% \\
+        INET          & AF11 & 2  & 4\%  \\
+        UNET          & AF42 & 7  & 16\% \\
+        PA            & AF41 & 10 & 22\% \\
+        MONITORING    & AF43 & 10 & 22\% \\
+        Class-default & --   & -- & 25\% \\
+
+        \bottomrule
+    \end{tabular}
+
+    \rowcolors{1}{}{}
+\end{table}
+\noindent
+Prioriteringene er valgt for å sikre at operative tjenester og overvåkning opprettholder tilstrekkelig kapasitet ved belastning. Velferds-/Internettrafikk gis lavere prioritet fordi denne trafikken kan degraderes uten tilsvarende operativ konsekvens.
 \subsection{Fysisk design}
-\dots
+Fysisk design omfatter den faktiske plasseringen og tilkoblingen av nettverkskomponentene, inkludert rutere, svitsjer og kabling. Dette sikrer at infrastrukturen er robust, skalerbar og enkel å vedlikeholde. Figuren under viser hvordan enhetene er fysisk oppkoblet inni site bygningsstrukturen.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{../Media/bygg_nettverk.png}
+    \caption{Fysisk oppkobling av enheter i site bygningsstrukturen.}
+    \label{fig:physical-design}
+\end{figure}
 \subsection{Hub-spoke arkitektur}
-\dots
+Figuren \ref{fig:logisk_arkitektur_dmvpn} viser den Hub-spoke arkitekturen for nettverket. Nettverket er designet slik at alle spoke-sites oppretter kommunikasjon gjennom hubben, denne huben befinner seg på BNHQ (Site 1). I det opperative nettene har vi i tillegg IPsec kryptering for å sikre konfidensiell kommunikasjonen mellom hub- og spoke-sites opprettholdes til enhver tid. Dette gir oss en økt kontroll over trafikken og sikkerheten i over trafikken som går over det Lituenske VPN-et.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{../Media/logisk arkitektur.png}
+    \caption{Design av Hub-spoke arkitektur.}
+    \label{fig:logisk_arkitektur_dmvpn}
+\end{figure}
+\noindent
+I tilleg har vi i denne løsningen sentralisert logging og AAA-tjenester for nettverks enheter og gatway mot det lituenske-sivil ISP er også koblet gjennom BHNQ sentral switch SWI1-SITE-1.
 \subsection{Logisk design}
-\dots
+Figuren \ref{fig:logisk_ip} viser den logiske arkitekturen for nettverket. Den logiske designen viser hvordan vlan i et gitt site er koblet opp logisk opp mot site ruteren.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{../Media/log_ip.jpg}
+    \caption{Logisk design for nettverket på Site X.}
+    \label{fig:logisk_ip}
+\end{figure}
+\noindent
+Denne strukturen er litt annerledes på HUB-lokasjonen (BNHQ, Site 1), etter som vi har ISP-tilkobling gjennom BNHQ sin switch SWI1-SITE-1. Figuren under viser ..........
+
 \subsection{Nettverkssikkerhet}
 \dots
 \subsubsection{Sikkerhetsovervåkning og logging}
