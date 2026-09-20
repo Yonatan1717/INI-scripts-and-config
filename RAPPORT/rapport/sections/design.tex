@@ -1,5 +1,8 @@
 \section{Design}
-Nettverket er bygget med VRF-Lite for lokal og ende-til-ende logisk segmentering, mens DMVPN benyttes som overlay mellom lokasjonene. Trafikk som krever konfidensialitet og integritetsbeskyttelse transporteres gjennom IPsec-beskyttede DMVPN-tunneler. ERSPAN benyttes for å transportere speilet nettverkstrafikk fra spoke-lokasjonene til den sentrale overvåkningsløsningen i BNHQ.
+Nettverket er bygget med VRF-Lite for logisk segmentering av de ulike tjenestenettene, mens DMVPN Phase 3 benyttes som overlay mellom lokasjonene. Det eksisterende Layer 3-VPN-et levert av det litauiske forsvaret benyttes som underlay og transporterer DMVPN-trafikken mellom lokasjonene. Den eksisterende transportinfrastrukturen krever dermed ingen konfigurasjonsendringer.\\[1em]
+Hver tjenestetype transporteres i et separat logisk segment. Trafikk som krever konfidensialitets- og integritetsbeskyttelse transporteres gjennom IPsec-beskyttede DMVPN-tunneler. Relevant nettverkstrafikk fra spoke-sites speiles ved hjelp av ERSPAN og transporteres til den sentrale overvåkningsløsningen i BNHQ.\\[1em]
+Løsningen er utformet med mål om å redusere sikkerhetsrisiko uten å endre nettverkets nødvendige funksjonalitet eller medføre større nyanskaffelser. Eksisterende Cisco-utstyr og tilgjengelige funksjoner benyttes så langt dette er mulig.
+
 \subsection{Designkrav}
 {\small
 \setlength{\tabcolsep}{4pt}
@@ -176,9 +179,12 @@ Mekanismer som EtherChannel, STP-beskyttelse og QoS bidrar til å redusere konse
 \end{longtable}
 }
 
-\subsection{IP-addresseringsplan}
-\subsubsection{Lokal nettverks plan}
-Tabell \ref{tab:ipplan-site-x} viser IP-adresseplanen for det lokale nettverket på Site X. Kolonnen \textbf{Res.} angir hvor mange adresser som holdes utenfor DHCP-poolen. Dette benyttes i MGMT-nettet, hvor nettverksenheter tildeles faste administrasjonsadresser, og i MONITORING-nettet dersom ERSPAN benyttes. Antallet reserverte adresser kan tilpasses i Excel-malen etter antall nettverksenheter på lokasjonen.
+\subsection{IP-adresseringsplan}
+\subsubsection{Lokal nettverksplan}
+Tabell \ref{tab:ipplan-site-x} viser adresseplanen for det lokale nettverket på Site X. Adresseplanen er standardisert slik at samme struktur benyttes på alle lokasjoner.\\[1em]
+Nettverket benytter adresseområdet 10.0.0.0/8. Andre oktett identifiserer site, mens tredje oktett identifiserer tjenestenettet. Eksempelvis vil MGMT-nettet på Site 1 benytte 10.1.10.0/24, mens MGMT-nettet på Site 2 benytter 10.2.10.0/24.\\[1em]
+Denne strukturen gjør det enkelt å identifisere både lokasjon og tjeneste direkte fra en IP-adresse, samtidig som samme adresseringsmodell kan gjenbrukes på alle sites.
+
 \begin{table}[H]
     \centering
     \caption{IP-adresseplan for det lokale nettverket på Site X.}
@@ -187,7 +193,6 @@ Tabell \ref{tab:ipplan-site-x} viser IP-adresseplanen for det lokale nettverket 
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{4pt}
     \rowcolors{2}{lightgreen}{white}
-
     \begin{tabular}{
         >{\bfseries}l
         c
@@ -197,7 +202,7 @@ Tabell \ref{tab:ipplan-site-x} viser IP-adresseplanen for det lokale nettverket 
         c
     }
         \toprule
-        \rowcolor{tablegreen}\color{white}
+        \rowcolor{tablegreen}
         \color{white}\textbf{VRF} &
         \color{white}\textbf{VLAN} &
         \color{white}\textbf{Nett-ID} &
@@ -205,35 +210,30 @@ Tabell \ref{tab:ipplan-site-x} viser IP-adresseplanen for det lokale nettverket 
         \color{white}\textbf{Adresseområde} &
         \color{white}\textbf{Res.} \\
         \midrule
-
-        MGMT       & 10 & 10.X.10.0/24 & 10.X.10.1 & 10.X.10.1 -- 10.X.10.254 & 40 \\
-        INET       & 20 & 10.X.20.0/24 & 10.X.20.1 & 10.X.20.1 -- 10.X.20.254 & -- \\
-        UNET       & 30 & 10.X.30.0/24 & 10.X.30.1 & 10.X.30.1 -- 10.X.30.254 & -- \\
-        PA         & 40 & 10.X.40.0/24 & 10.X.40.1 & 10.X.40.1 -- 10.X.40.254 & -- \\
-        MONITORING & 50 & 10.X.50.0/24 & 10.X.50.1 & 10.X.50.1 -- 10.X.50.254 & 40 \\
-
+        MGMT       & 10 & 10.X.10.0/24 & 10.X.10.1 & 10.X.10.1--10.X.10.254 & 40 \\
+        INET       & 20 & 10.X.20.0/24 & 10.X.20.1 & 10.X.20.1--10.X.20.254 & -- \\
+        UNET       & 30 & 10.X.30.0/24 & 10.X.30.1 & 10.X.30.1--10.X.30.254 & -- \\
+        PA         & 40 & 10.X.40.0/24 & 10.X.40.1 & 10.X.40.1--10.X.40.254 & -- \\
+        MONITORING & 50 & 10.X.50.0/24 & 10.X.50.1 & 10.X.50.1--10.X.50.254 & 40 \\
         \bottomrule
     \end{tabular}
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Nettverket er fordelt ut ifra 10.0.0.0/8-adresseområdet. Hvor andre okttett beskriver site og tredje okttett beskriver lanet. Generatoeren støtter dermed:
+Kolonnen \textbf{Res.} angir hvor mange adresser som reserveres utenfor den dynamiske adressepoolen. Dette er spesielt relevant i MGMT- og MONITORING-nettene, hvor nettverksenheter og overvåkningskomponenter benytter faste adresser.\\[1em]
+Et /24-nett inneholder 254 brukbare host-adresser. Dersom 40 adresser reserveres, gjenstår:
 \[
-    2^8 - 1 = 255
+    A_{\text{ledige}} = 254 - 40 = 214
 \]
-individuelle LAN og Sites for denne spsifkke ip fordeling.
-Antall ledige Host-adresser i hver subnett kan beregnes ved å trekke fra antall reserverte adresser fra det totale antallet adresser i subnettet:
-\[
-    A_\text{ledige} = A_{max} - A_\text{res}
-\] 
-For eksempel for MGMT-nettet har man:
-\[
-    A_\text{ledige} = 254 - 40 = 216
-\]
+adresser til øvrig bruk.\\[1em]
+Andre oktett består av åtte bit og benyttes som site-identifikator. Dersom site-ID 0 reserveres, kan modellen benytte site-ID 1--255. Tredje oktett benyttes til å identifisere tjenestenettet og følger den samme nummereringen på alle sites.
+
 \subsubsection{Loopback- og DMVPN-plan}
-Tabell \ref{tab:loopback-site-x} viser loopback-planen for Site X.
-Loopback-adressene benyttes som stabile adresser for de ulike VRF-ene.
-Egne source-loopbacks benyttes som kildeadresser for DMVPN-tunnelene.
+Loopback-adresser benyttes som stabile adresser for administrasjon, ruting og tunnelterminering.\\[1em]
+Hver VRF har en ordinær loopback som representerer VRF-en lokalt. I tillegg benyttes en separat global source-loopback for hvert DMVPN-overlay.\\[1em]
+Egne source-loopbacks gjør at hvert DMVPN-overlay får en unik underlay-kildeadresse. Denne adressen benyttes også som identitet ved matching av remote peers i den tilhørende IKEv2-profilen. Dermed kan de ulike overlayene benytte separate IKEv2- og IPsec-profiler uten at peer-matching overlapper mellom tunnelene.\\[1em]
+Dette gir tydelig separasjon mellom tunnelene og gjør det enklere å feilsøke og administrere de ulike sikkerhetsdomenene.
+
 \begin{table}[H]
     \centering
     \caption{Loopback-adresser benyttet på Site X.}
@@ -242,26 +242,23 @@ Egne source-loopbacks benyttes som kildeadresser for DMVPN-tunnelene.
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{8pt}
     \rowcolors{2}{lightgreen}{white}
-
     \begin{tabular}{lll}
         \toprule
         \rowcolor{tablegreen}
         \color{white}\textbf{Tjeneste} &
-        \color{white}\textbf{Vanlig loopback} &
+        \color{white}\textbf{VRF-loopback} &
         \color{white}\textbf{DMVPN source-loopback} \\
         \midrule
-
         MGMT       & Loopback10 & Loopback11 \\
         INET       & Loopback20 & Loopback21 \\
         UNET       & Loopback30 & Loopback31 \\
         PA         & Loopback40 & Loopback41 \\
         MONITORING & Loopback50 & Loopback51 \\
-
         \bottomrule
     \end{tabular}
-
     \rowcolors{1}{}{}
 \end{table}
+
 \begin{table}[H]
     \centering
     \caption{DMVPN-adresseplan for Site X.}
@@ -270,15 +267,7 @@ Egne source-loopbacks benyttes som kildeadresser for DMVPN-tunnelene.
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{5pt}
     \rowcolors{2}{lightgreen}{white}
-
-    \begin{tabular}{
-        l
-        >{\bfseries}l
-        l
-        l
-        c
-        c
-    }
+    \begin{tabular}{llllcc}
         \toprule
         \rowcolor{tablegreen}
         \color{white}\textbf{Tunnel} &
@@ -288,27 +277,27 @@ Egne source-loopbacks benyttes som kildeadresser for DMVPN-tunnelene.
         \color{white}\textbf{NHRP-ID} &
         \color{white}\textbf{IPsec} \\
         \midrule
-
         Tunnel10 & MGMT       & 172.16.10.X/24 & Loopback11 & 10 & Ja \\
         Tunnel20 & INET       & 172.16.20.X/24 & Loopback21 & 20 & Nei \\
         Tunnel30 & UNET       & 172.16.30.X/24 & Loopback31 & 30 & Ja \\
         Tunnel40 & PA         & 172.16.40.X/24 & Loopback41 & 40 & Ja \\
         Tunnel50 & MONITORING & 172.16.50.X/24 & Loopback51 & 50 & Ja \\
-
         \bottomrule
     \end{tabular}
-
     \rowcolors{1}{}{}
 \end{table}
+
 \subsubsection{QoS}
-Tabell \ref{tab:qos-site-x} viser QoS-klassifiseringen for Site X. 
-Trafikken klassifiseres og merkes basert på tilhørende VRF.
-Totalt 75~\% av båndbredden fordeles mellom de definerte trafikkklassene
-basert på deres prioriteringsvekt, mens 25~\% reserveres til
-\texttt{class-default}. For en klasse $i$ beregnes minimum båndbreddeandelen som:
+QoS benyttes for å sikre at tjenester med operativ betydning beholder tilstrekkelig kapasitet dersom WAN-forbindelsen blir belastet.\\[1em]
+Trafikken klassifiseres og merkes basert på hvilken VRF den tilhører. Totalt 75~\% av tilgjengelig båndbredde fordeles mellom de definerte trafikkklassene, mens 25~\% beholdes i \texttt{class-default}.\\[1em]
+For en trafikkklasse $i$ beregnes minimum båndbreddeandel som:
 \[
-B_i = \frac{P_i}{\sum P}\cdot 75\%.
+    B_i =
+    \frac{P_i}{\sum P}
+    \cdot 75\%
 \]
+der $P_i$ representerer klassens prioriteringsvekt.
+
 \begin{table}[H]
     \centering
     \caption{QoS-vekting og båndbreddefordeling for Site X.}
@@ -317,7 +306,6 @@ B_i = \frac{P_i}{\sum P}\cdot 75\%.
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{7pt}
     \rowcolors{2}{lightgreen}{white}
-
     \begin{tabular}{lccc}
         \toprule
         \rowcolor{tablegreen}
@@ -326,53 +314,225 @@ B_i = \frac{P_i}{\sum P}\cdot 75\%.
         \color{white}\textbf{Vekt} &
         \color{white}\textbf{Båndbreddeandel} \\
         \midrule
-
         MGMT          & AF21 & 5  & 11\% \\
         INET          & AF11 & 2  & 4\%  \\
         UNET          & AF42 & 7  & 16\% \\
         PA            & AF41 & 10 & 22\% \\
         MONITORING    & AF43 & 10 & 22\% \\
         Class-default & --   & -- & 25\% \\
-
         \bottomrule
     \end{tabular}
-
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Prioriteringene er valgt for å sikre at operative tjenester og overvåkning opprettholder tilstrekkelig kapasitet ved belastning. Velferds-/Internettrafikk gis lavere prioritet fordi denne trafikken kan degraderes uten tilsvarende operativ konsekvens.
+Prioriteringene er valgt for å sikre at operative tjenester og overvåkning opprettholder tilstrekkelig kapasitet ved belastning. Velferds- og Internettrafikk gis lavere prioritet fordi redusert ytelse i dette nettet har mindre operativ konsekvens.
+
 \subsection{Fysisk design}
-Fysisk design omfatter den faktiske plasseringen og tilkoblingen av nettverkskomponentene, inkludert rutere, svitsjer og kabling. Dette sikrer at infrastrukturen er robust, skalerbar og enkel å vedlikeholde. Figuren under viser hvordan enhetene er fysisk oppkoblet inni site bygningsstrukturen.
+Det fysiske designet beskriver hvordan rutere, svitsjer, servere og endepunkter er koblet sammen på den enkelte lokasjonen.\\[1em]
+Hvert site består av en site-ruter og én eller flere aksessvitsjer. Svitsjene transporterer de lokale VLAN-ene frem til site-ruteren, som fungerer som Layer 3-grense mellom de ulike tjenestenettene og DMVPN-overlayene.\\[1em]
+Der flere svitsjer benyttes på samme site, kan redundante switch-forbindelser samles i EtherChannel. Dette gir både økt tilgjengelighet og bedre utnyttelse av tilgjengelig kapasitet.
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/bygg_nettverk.png}
-    \caption{Fysisk oppkobling av enheter i site bygningsstrukturen.}
+    \caption{Fysisk oppkobling av enheter i site-bygningsstrukturen.}
     \label{fig:physical-design}
 \end{figure}
-\subsection{Hub-spoke arkitektur}
-Figuren \ref{fig:logisk_arkitektur_dmvpn} viser den Hub-spoke arkitekturen for nettverket. Nettverket er designet slik at alle spoke-sites oppretter kommunikasjon gjennom hubben, denne huben befinner seg på BNHQ (Site 1). I det opperative nettene har vi i tillegg IPsec kryptering for å sikre konfidensiell kommunikasjonen mellom hub- og spoke-sites opprettholdes til enhver tid. Dette gir oss en økt kontroll over trafikken og sikkerheten i over trafikken som går over det Lituenske VPN-et.
+
+\subsection{DMVPN Phase 3-arkitektur}
+BNHQ, Site 1, fungerer som DMVPN-hub og NHRP Next Hop Server (NHS). De øvrige lokasjonene fungerer som spokes og registrerer sine DMVPN-adresser mot hubben.\\[1em]
+Arkitekturen har derfor en logisk hub-and-spoke-struktur for etablering, registrering og dynamisk ruting. Dataplanet er imidlertid ikke begrenset til at all spoke-to-spoke-trafikk må gå gjennom hubben.\\[1em]
+DMVPN Phase 3 benytter NHRP Redirect på huben og NHRP Shortcut på spoke-routerne. Når to spoke-sites kommuniserer, kan den første trafikken gå via hubben. Huben kan deretter informere avsenderen om at det finnes en mer direkte next-hop. Spoke-routerne kan da etablere en dynamisk direkte forbindelse mellom seg.\\[1em]
+Nettverket fungerer dermed som hub-and-spoke i kontrollplanet, mens dataplanet ved behov kan utvikle seg til en dynamisk partial-mesh. Dette reduserer unødvendig trafikk (og økt sjanse for flaskehalser) gjennom BNHQ og gjør arkitekturen mer skalerbar når flere sites etableres.
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/logisk arkitektur.png}
-    \caption{Design av Hub-spoke arkitektur.}
+    \caption{DMVPN Phase 3-arkitektur mellom hub og spoke-sites.}
     \label{fig:logisk_arkitektur_dmvpn}
 \end{figure}
 \noindent
-I tilleg har vi i denne løsningen sentralisert logging og AAA-tjenester for nettverks enheter og gatway mot det lituenske-sivil ISP er også koblet gjennom BHNQ sentral switch SWI1-SITE-1.
+Det eksisterende Layer 3-VPN-et levert av det litauiske forsvaret benyttes kun som underlay. DMVPN etableres som et separat overlay og krever derfor ingen endringer i den eksternt leverte transporttjenesten.\\[1em]
+For de overlayene hvor IPsec er aktivert, etableres krypterte forbindelser mellom DMVPN-peerene. På denne måten beskyttes konfidensialitet og integritet selv om trafikken transporteres over en underliggende infrastruktur som eFP ikke administrerer.\\[1em]
+BNHQ er i tillegg lokasjon for sentrale tjenester som TACACS+, syslog, NTP og Security Onion. Tilkoblingen mot sivil ISP er også terminert på BNHQ.
+
 \subsection{Logisk design}
-Figuren \ref{fig:logisk_ip} viser den logiske arkitekturen for nettverket. Den logiske designen viser hvordan vlan i et gitt site er koblet opp logisk opp mot site ruteren.
+Figur \ref{fig:logisk_ip} viser den logiske arkitekturen på et spoke-site.\\[1em]
+Klienter og tjenester plasseres i separate VLAN basert på funksjon. VLAN-ene termineres på site-ruteren, hvor hvert Layer 3-interface tilordnes den korresponderende VRF-en.\\[1em]
+VRF-Lite oppretter separate rutingtabeller for MGMT, INET, UNET, PA og MONITORING. Trafikk kan dermed ikke routes direkte mellom disse segmentene uten at dette eksplisitt tillates av designet.\\[1em]
+Hver VRF har sitt eget DMVPN-overlay mellom sites. Dette gjør at segmenteringen som etableres lokalt videreføres gjennom WAN-et, selv om alle overlayene fysisk transporteres over den samme underliggende forbindelsen.
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/log_ip.jpg}
     \caption{Logisk design for nettverket på Site X.}
     \label{fig:logisk_ip}
 \end{figure}
-\noindent
-Denne strukturen er litt annerledes på HUB-lokasjonen (BNHQ, Site 1), etter som vi har ISP-tilkobling gjennom BNHQ sin switch SWI1-SITE-1. Figuren under viser ..........
+
+HUB-lokasjonen BNHQ skiller seg noe fra spoke-lokasjonene fordi sentrale servere og WAN-/ISP-tilkobling er plassert her. BNHQ fungerer samtidig som DMVPN-hub og som sentral lokasjon for administrasjon, logging, tidsdistribusjon og sikkerhetsovervåkning.
 
 \subsection{Nettverkssikkerhet}
-\dots
+Nettverkssikkerheten bygger på en kombinasjon av segmentering, tilgangskontroll, autentisering, kryptering, Layer 2-beskyttelse og sentral overvåkning.\\[1em]
+VRF-Lite reduserer muligheten for lateral kommunikasjon mellom tjenestenettene, mens ACL-er håndhever hvilke protokoller og tjenester som tillates fra det enkelte segment.\\[1em]
+Administrasjon av nettverksenhetene skjer gjennom SSH og begrenses til definerte MGMT-nett. TACACS+ benyttes for sentral autentisering, autorisasjon og accounting av administrativ aktivitet, med lokal bruker som fallback dersom den sentrale tjenesten ikke er tilgjengelig.\\[1em]
+IPsec benyttes på de DMVPN-overlayene hvor trafikken skal beskyttes mot innsyn og manipulering under transport mellom sites.\\[1em]
+På aksesslaget benyttes DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, Port Security og STP-beskyttelse for å redusere risikoen knyttet til uautoriserte eller feilkonfigurerte enheter.
+
+\subsubsection{Tilgangskontroll mellom nettverk}
+Trafikk mellom tjenestenettene følger en eksplisitt trafikkpolicy. Generatoren oversetter denne policyen til extended ACL-er som plasseres inbound på Layer 3-interface for den aktuelle kilde-VRF-en.\\[1em]
+Bare eksplisitt definert trafikk tillates. ACL-ene avsluttes med en eksplisitt deny-regel med logging. Dette innebærer at tjenestematrisen fungerer som kilde til sannhet for hvilken kommunikasjon som skal være mulig mellom segmentene.\\[1em]
+Denne modellen følger et least-privilege-prinsipp og reduserer konsekvensen dersom en klient kompromitteres.
+
+\subsubsection{Administrasjon og AAA}
+Nettverksenheter administreres ved hjelp av SSH versjon 2. Telnet benyttes ikke.\\[1em]
+Tilgang til VTY-linjene begrenses ved hjelp av en egen SSH-MGMT-ONLY ACL slik at administrativ tilgang bare kan initieres fra godkjente MGMT-nett.\\[1em]
+TACACS+ benyttes som sentral AAA-tjeneste. Dette muliggjør sentral autentisering av administratorer, kontroll av administrative rettigheter og accounting av administrative sesjoner og kommandoer.\\[1em]
+Ved bortfall av TACACS+-tjenesten benyttes lokal autentisering som fallback slik at nettverksenhetene fortsatt kan administreres.
+
 \subsubsection{Sikkerhetsovervåkning og logging}
-\dots
-\subsubsection{Sikkerhetstiltak og konfigurasjon}
-\dots
+Sikkerhetsovervåkning består av to separate datakilder: systemlogger fra nettverksenhetene og speilet nettverkstrafikk.\\[1em]
+Alle relevante nettverksenheter sender syslog-meldinger til den sentrale loggtjenesten på BNHQ. Loggene tidsstemples og nettverksenhetene synkroniseres mot et felles NTP-hierarki slik at hendelser kan korreleres mellom flere enheter.\\[1em]
+Relevant dataplantrafikk fra spoke-sites speiles ved hjelp av ERSPAN. ERSPAN transporterer kopier av utvalgte pakker gjennom MONITORING-nettet til Security Onion på BNHQ.\\[1em]
+ERSPAN transporterer dermed ikke systemlogger og skal ikke forveksles med syslog. Syslog beskriver hendelser generert av nettverksenhetene, mens ERSPAN gjør selve nettverkstrafikken tilgjengelig for analyse.\\[1em]
+Security Onion benyttes som sentral IDS- og sikkerhetsovervåkningsplattform. Plattformen mottar speilet trafikk og kan benyttes til blant annet nettverksanalyse, deteksjon og hendelseshåndtering.\\[1em]
+Ved å kombinere nettverkstrafikk med sentrale systemlogger får administratorene et bedre grunnlag for å identifisere og analysere sikkerhetshendelser.
+
+\subsubsection{Sikkerhetsmekanismer på rutere}
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\rowcolors{2}{lightgreen}{white}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.8cm}>{\raggedright\arraybackslash}p{9.9cm}}
+\toprule
+\rowcolor{tablegreen}
+\color{white}\textbf{Mekanisme} & \color{white}\textbf{Funksjon} \\
+\midrule
+VRF-Lite &
+Skiller tjenestenettene i separate rutingtabeller og reduserer muligheten for lateral kommunikasjon. \\
+Flow-policy / ACL &
+Tillater bare eksplisitt definert trafikk mellom segmentene og blokkerer øvrig trafikk. \\
+DMVPN Phase 3 &
+Gir skalerbar dynamisk kommunikasjon mellom sites og muliggjør direkte spoke-to-spoke-shortcuts. \\
+IPsec &
+Beskytter utvalgte DMVPN-overlay mot avlytting og manipulering. \\
+SSH v2 &
+Gir kryptert fjernadministrasjon av nettverksenhetene. \\
+SSH-MGMT-ONLY ACL &
+Begrenser administrativ tilgang til godkjente MGMT-nett. \\
+AAA / TACACS+ &
+Gir sentral autentisering, autorisasjon og accounting av administrativ aktivitet. \\
+Syslog &
+Sender system- og sikkerhetshendelser til sentral loggtjeneste. \\
+NTP &
+Gir nettverksenhetene et felles tidsgrunnlag. \\
+No IP redirects &
+Hindrer ruteren i å påvirke klientenes ruting ved hjelp av ICMP Redirect. \\
+No Proxy ARP &
+Hindrer ruteren i å svare på ARP på vegne av andre systemer. \\
+EIGRP passive-interface &
+Begrenser etablering av EIGRP-naboskap til interface hvor routingprotokollen faktisk skal benyttes. \\
+\bottomrule
+\end{tabular}
+\rowcolors{1}{}{}
+\caption{Sikkerhetsmekanismer implementert på site-rutere.}
+\label{tab:router-security}
+\end{table}
+
+\subsubsection{Sikkerhetsmekanismer på svitsjer}
+
+\begin{table}[H]
+
+\centering
+\small
+
+\setlength{\tabcolsep}{6pt}
+
+\rowcolors{2}{lightgreen}{white}
+
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{3.8cm}
+    >{\raggedright\arraybackslash}p{9.9cm}
+}
+
+\toprule
+
+\rowcolor{tablegreen}
+\color{white}\textbf{Mekanisme} &
+\color{white}\textbf{Funksjon} \\
+
+\midrule
+
+DHCP Snooping &
+Blokkerer uautoriserte DHCP-servere og etablerer bindinger mellom port, IP-adresse og MAC-adresse. \\
+
+Dynamic ARP Inspection &
+Validerer ARP-trafikk mot gyldige IP--MAC-bindinger og reduserer ARP spoofing. \\
+
+IP Source Guard &
+Kontrollerer at trafikk inn på en accessport benytter en gyldig source-IP. \\
+
+Port Security &
+Begrenser hvilke og hvor mange MAC-adresser som kan benyttes på en accessport. \\
+
+BPDU Guard &
+Stenger edge-porter dersom de mottar BPDU-er. \\
+
+Root Guard &
+Hindrer uautoriserte downstream-svitsjer i å overta rollen som STP-root. \\
+
+Loop Guard &
+Reduserer risikoen for Layer 2-loops som følge av unidireksjonelle forbindelsesfeil. \\
+
+Blackhole VLAN &
+Plasserer ubrukte porter i et VLAN som ikke transporterer produksjonstrafikk. \\
+
+Shutdown av ubrukte porter &
+Hindrer fysisk nettverkstilgang gjennom porter som ikke er i bruk. \\
+
+Trunk allow-list &
+Begrenser hvilke VLAN som kan transporteres over trunkforbindelser. \\
+
+SSH v2 &
+Gir kryptert administrasjon av svitsjene. \\
+
+AAA / TACACS+ &
+Gir sentral kontroll av administrativ innlogging. \\
+
+Syslog &
+Sender hendelser fra svitsjene til sentral loggtjeneste. \\
+
+NTP &
+Sikrer konsistente tidsstempler på tvers av nettverksenhetene. \\
+
+SPAN/RSPAN/
+ERSPAN &
+Gjør relevant nettverkstrafikk tilgjengelig for sentral IDS-analyse. \\
+
+EtherChannel &
+Gir redundans og økt tilgjengelighet på switch-to-switch-forbindelser. \\
+
+\bottomrule
+
+\end{tabular}
+
+\rowcolors{1}{}{}
+
+\caption{Sikkerhetsmekanismer implementert på svitsjer.}
+\label{tab:switch-security}
+
+\end{table}
+
+\subsection{Standardisering og konfigurasjonsgenerator}
+For å redusere manuelt konfigurasjonsarbeid og konfigurasjonsavvik genereres router- og switch-konfigurasjoner fra en standardisert Excel-mal.\\[1em]
+Malen inneholder blant annet informasjon om sites, VLAN, VRF, IP-adresser, tunneler, sikkerhetspolicy og sentrale tjenester. Generatoren bruker disse dataene til å produsere en konsistent konfigurasjon for hver nettverksenhet.\\[1em]
+Dette gjør det enklere å etablere nye sites og reduserer risikoen for at senere kontingenter innfører konfigurasjoner som avviker fra den definerte sikkerhetsbaselinen.
+
+\subsection{Operative konsekvenser}
+Segmenteringen innebærer at kommunikasjon som tidligere var mulig i det flate nettverket ikke lenger automatisk tillates. Applikasjoner eller tjenester som krever kommunikasjon mellom segmentene må derfor være identifisert og inkludert i trafikkpolicyen før løsningen settes i produksjon.\\[1em]
+Feil eller mangler i ACL-er, DHCP-sikkerhet, STP-konfigurasjon eller dynamisk ruting kan føre til bortfall av tjenester. Endringene skal derfor valideres i det tilgjengelige testmiljøet før produksjonssetting.\\[1em]
+Samtidig reduserer den standardiserte arkitekturen den løpende driftsbelastningen. Sentral AAA, logging, NTP, dynamisk ruting og automatisk generering av konfigurasjon reduserer behovet for manuell konfigurasjon og gjør feilsøking enklere.\\[1em]
+DMVPN Phase 3 gjør det mulig å legge til nye spoke-sites uten at det må opprettes separate punkt-til-punkt-tunneler mellom alle lokasjoner. Dette forbedrer skalerbarheten sammenlignet med en tradisjonell full-mesh av statiske GRE-tunneler.
+
+\subsection{Testing og produksjonssetting}
+\dots 
