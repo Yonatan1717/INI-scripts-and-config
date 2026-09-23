@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 import ipaddress
 
 DEFAULT_IPSEC_PSK = "DMVPN-KEY"
+DEFAULT_ISP_VLAN = 200
 SSH_DOMAIN = "lab.local"
 FLOW_POLICY_SHEET = "FLOW_POLICY"
 FLOW_POLICY_COLUMNS = ["source", "destination", "protocol", "destination_port", "action"]
@@ -168,6 +169,173 @@ def _metadata_value(md, names):
     return None
 
 
+def get_isp_vlan(md):
+    """Return ISP VLAN from router metadata, with VLAN 200 as fallback.
+
+    Supported Excel column names: ISP_vlan, isp_vlan, ISP-VLAN and ISP VLAN.
+    An explicit Excel value always overrides DEFAULT_ISP_VLAN.
+    """
+    value = _metadata_value(
+        md,
+        ("ISP_vlan", "isp_vlan", "ISP-VLAN", "ISP VLAN"),
+    )
+
+    if value is None:
+        return DEFAULT_ISP_VLAN
+
+    try:
+        vlan = int(float(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Ugyldig ISP VLAN i Excel: {value}") from exc
+
+    if not 1 <= vlan <= 4094 or vlan == 999:
+        raise ValueError(
+            f"Ugyldig ISP VLAN {vlan}. Velg VLAN 1-4094, men ikke native/blackhole VLAN 999."
+        )
+
+    return vlan
+
+
+
+
+def normalise_dmvpn_phase(value):
+    """Normaliser DMVPN-fase fra HUB-arket.
+
+    Godtar 2/3, Phase 2/3 og Fase 2/3. Tom verdi beholder bakoverkompatibilitet
+    med tidligere generatorversjoner og tolkes som Phase 3.
+    """
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return 3
+
+    text = str(value).strip().lower().replace("_", " ").replace("-", " ")
+    text = " ".join(text.split())
+    aliases = {
+        "2": 2,
+        "phase 2": 2,
+        "phase2": 2,
+        "fase 2": 2,
+        "fase2": 2,
+        "3": 3,
+        "phase 3": 3,
+        "phase3": 3,
+        "fase 3": 3,
+        "fase3": 3,
+    }
+    if text in aliases:
+        return aliases[text]
+
+    try:
+        numeric = int(float(text))
+        if numeric in (2, 3):
+            return numeric
+    except (TypeError, ValueError):
+        pass
+
+    raise ValueError(
+        f"Ugyldig DMVPN-fase '{value}'. HUB-arket må bruke 2 eller 3 "
+        "(eventuelt 'Phase 2'/'Phase 3')."
+    )
+
+
+def get_dmvpn_phase_from_hub(md):
+    """Hent nettverksfelles DMVPN-fase fra metadata på HUB-arket."""
+    value = _metadata_value(
+        md,
+        ("dmvpn_phase", "dmvpn phase", "dmvpn_fase", "dmvpn fase"),
+    )
+    return normalise_dmvpn_phase(value)
+
+
+def _normalise_compat_choice(value, field, allowed, default):
+    """Normalise a small compatibility selector from Excel metadata."""
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return default
+    text = str(value).strip().upper().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "OLD": "OLD", "LEGACY": "OLD", "GAMMEL": "OLD",
+        "NEW": "NEW", "NY": "NEW",
+        "NAMED": "NAMED", "CLASSIC": "CLASSIC",
+        "IKEV1": "IKEV1", "IKE1": "IKEV1", "1": "IKEV1",
+        "IKEV2": "IKEV2", "IKE2": "IKEV2", "2": "IKEV2",
+        "AUTO": "AUTO", "5": "5", "8": "8", "9": "9",
+    }
+    text = aliases.get(text, text)
+    if text not in allowed:
+        raise ValueError(
+            f"Ugyldig {field}='{value}'. Gyldige verdier: {', '.join(allowed)}"
+        )
+    return text
+
+
+def get_tacacs_syntax(md):
+    return _normalise_compat_choice(
+        _metadata_value(md, ("tacacs_syntax", "tacacs syntax")),
+        "tacacs_syntax", ("OLD", "NEW"), "NEW"
+    )
+
+
+def get_eigrp_syntax(md):
+    return _normalise_compat_choice(
+        _metadata_value(md, ("eigrp_syntax", "eigrp syntax")),
+        "eigrp_syntax", ("CLASSIC", "NAMED"), "NAMED"
+    )
+
+
+def get_vrf_syntax(md):
+    return _normalise_compat_choice(
+        _metadata_value(md, ("vrf_syntax", "vrf syntax")),
+        "vrf_syntax", ("OLD", "NEW"), "OLD"
+    )
+
+
+def get_ike_version(md):
+    return _normalise_compat_choice(
+        _metadata_value(md, ("ike_version", "ike version")),
+        "ike_version", ("IKEV1", "IKEV2"), "IKEV2"
+    )
+
+
+def get_secret_type(md):
+    return _normalise_compat_choice(
+        _metadata_value(md, ("secret_type", "secret type")),
+        "secret_type", ("AUTO", "5", "8", "9"), "AUTO"
+    )
+
+
+def _secret_command(prefix, value, secret_type):
+    """Build a Cisco secret command without silently relabelling a hash."""
+    value = "" if pd.isna(value) else str(value).strip()
+    if not value:
+        raise ValueError(f"Tom secret/passordverdi for '{prefix}'.")
+
+    detected = None
+    for stype in ("5", "8", "9"):
+        if value.startswith(f"${stype}$"):
+            detected = stype
+            break
+
+    if secret_type == "AUTO":
+        if detected:
+            return f"{prefix} secret {detected} {value}"
+        # Plaintext fallback: let IOS hash it according to the platform default.
+        return f"{prefix} secret 0 {value}"
+
+    if detected and detected != secret_type:
+        raise ValueError(
+            f"secret_type={secret_type}, men verdien for '{prefix}' er et type {detected}-hash. "
+            "Bytt enten secret_type eller bruk en hash av riktig type."
+        )
+    if detected is None:
+        raise ValueError(
+            f"secret_type={secret_type} krever en ferdig type {secret_type}-hash for '{prefix}'. "
+            "Bruk AUTO dersom cellen inneholder plaintext."
+        )
+    return f"{prefix} secret {secret_type} {value}"
+
+
+def _vrf_forwarding_command(vrf, vrf_syntax):
+    return f"vrf forwarding {vrf}" if vrf_syntax == "NEW" else f"ip vrf forwarding {vrf}"
+
 def _append_unique_vrf_endpoint(context, bucket_name, vrf, endpoint):
     """Append a unique endpoint to one VRF-specific context bucket."""
     bucket = context[bucket_name].setdefault(vrf, [])
@@ -191,6 +359,7 @@ def build_flow_policy_context(filename, site_sheets):
         "dns": [],
         "tacacs": [],
         "syslog": [],
+        "radius": [],
     }
 
     for sheet in site_sheets:
@@ -254,6 +423,14 @@ def build_flow_policy_context(filename, site_sheets):
             syslog = str(ipaddress.ip_address(syslog))
             if syslog not in context["syslog"]:
                 context["syslog"].append(syslog)
+
+        radius = _metadata_value(
+            md, ["radius_server_ip", "radius server ip", "radius_server"]
+        )
+        if radius:
+            radius = str(ipaddress.ip_address(radius))
+            if radius not in context["radius"]:
+                context["radius"].append(radius)
 
     return context
 
@@ -336,7 +513,11 @@ def _acl_destination_endpoints(
     resolves to both routed MGMT LANs and MGMT loopbacks.
 
     If source and destination are the same VRF, the local source subnet is
-    omitted because same-subnet host traffic never traverses this router ACL.
+    intentionally kept. Normal host-to-host traffic in the same subnet stays
+    at Layer 2 and never reaches this ACL, but traffic addressed to the local
+    router gateway does. Keeping the local subnet therefore allows an explicit
+    same-VRF FLOW_POLICY rule (for example MGMT -> MGMT permit ip) to cover the
+    gateway as expected.
     """
     dest = destination.upper()
 
@@ -357,6 +538,11 @@ def _acl_destination_endpoints(
         if not values:
             raise ValueError("FLOW_POLICY bruker SYSLOG, men syslog_server_ip mangler")
         return [f"host {ip}" for ip in values]
+    if dest == "RADIUS":
+        values = context.get("radius", [])
+        if not values:
+            raise ValueError("FLOW_POLICY bruker RADIUS, men radius_server_ip mangler")
+        return [f"host {ip}" for ip in values]
     if dest == "SELF":
         if not local_gateway:
             raise ValueError("FLOW_POLICY destination=SELF krever lokal gateway")
@@ -367,7 +553,7 @@ def _acl_destination_endpoints(
         raise ValueError(
             f"Ukjent FLOW_POLICY-destination '{destination}'. "
             f"Kjente VRF-er: {', '.join(sorted(known))}; spesialverdier: "
-            "INTERNET, ANY, DNS, DHCP, TACACS, SYSLOG, SELF"
+            "INTERNET, ANY, DNS, DHCP, TACACS, SYSLOG, RADIUS, SELF"
         )
 
     source_network = str(source_network) if source_network is not None else None
@@ -375,17 +561,10 @@ def _acl_destination_endpoints(
     for endpoint in context.get("vrf_networks", {}).get(dest, []):
         network_address = endpoint[1]
         wildcard = endpoint[2]
-        if source_network is not None:
-            candidate = ipaddress.ip_network(
-                f"{network_address}/{wildcard}", strict=False
-            )
-            # wildcard is not a prefix mask, so construct from hostmask safely.
-            mask_int = ((1 << 32) - 1) ^ int(ipaddress.IPv4Address(wildcard))
-            candidate = ipaddress.ip_network(
-                f"{network_address}/{ipaddress.IPv4Address(mask_int)}", strict=False
-            )
-            if str(candidate) == source_network:
-                continue
+        # Do not remove the local source subnet for same-VRF rules.  Although
+        # ordinary same-subnet host traffic is switched locally, packets sent to
+        # the router's own gateway address do hit this inbound ACL.  A rule such
+        # as MGMT -> MGMT permit ip must therefore render the local subnet too.
         rendered.append(f"{network_address} {wildcard}")
 
     # MGMT loopbacks are intentional management-plane destinations. Keep them
@@ -574,8 +753,9 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
             )
             port_specs = _parse_acl_ports(port_text, protocol)
 
-            # A same-VRF rule on a one-site workbook can legitimately resolve to
-            # zero routed LAN destinations after the local subnet is removed.
+            # Same-VRF rules include the local LAN as well as remote LANs.
+            # Local host-to-host packets stay at Layer 2, while packets to the
+            # router gateway are evaluated by this ACL.
             for dest_match in destinations:
                 for spec in port_specs:
                     line = f"{action} {protocol} {source_match} {dest_match}"
@@ -628,42 +808,76 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
     if flow_info:
         network_info["flow_policy"] = flow_info
 
-def create_vrf(vrf_data, sn):
-    my_data = {}
-    my_data["config"] = {}
-    my_data["network_info"] = {}
+def create_vrf(vrf_data, sn, vrf_syntax="OLD"):
+    my_data = {"config": {}, "network_info": {}}
 
-    for index, row in vrf_data.iterrows():
+    for _, row in vrf_data.iterrows():
         vrf_name = row["vrf"]
         vrf_loopback = row["loopback"]
         vrf_laddr = row["laddr"]
 
         my_data["network_info"][vrf_name] = {
             "loopback": vrf_loopback,
-            "laddr": vrf_laddr
+            "laddr": vrf_laddr,
         }
 
-        vrf_s = []
-        vrf_s.append("exit")
-        my_data["config"][f"ip vrf {vrf_name}"] = vrf_s
+        if vrf_syntax == "NEW":
+            my_data["config"][f"vrf definition {vrf_name}"] = [
+                "address-family ipv4",
+                "exit-address-family",
+                "exit",
+            ]
+        else:
+            my_data["config"][f"ip vrf {vrf_name}"] = ["exit"]
 
-        intf_s = []
-        intf_s.append(f"ip vrf forwarding {vrf_name}")
-        intf_s.append(f"ip address {vrf_laddr} 255.255.255.255")
-        intf_s.append("exit")
-        my_data["config"][f"interface loopback{vrf_loopback}"] = intf_s
+        my_data["config"][f"interface loopback{vrf_loopback}"] = [
+            _vrf_forwarding_command(vrf_name, vrf_syntax),
+            f"ip address {vrf_laddr} 255.255.255.255",
+            "exit",
+        ]
 
     return my_data
+
+
+def _allocate_qos_percentages(ip_data, total_percent=75):
+    """Allocate integer CBWFQ percentages that sum exactly to total_percent.
+
+    Floors are used first; leftover percentage points go to the largest
+    fractional remainders, with higher priority weight winning ties.
+    """
+    weights = []
+    for idx, row in ip_data.iterrows():
+        try:
+            weight = float(row.get("pri-1-10", 0) or 0)
+        except (TypeError, ValueError):
+            weight = 0.0
+        weights.append((idx, max(weight, 0.0)))
+
+    total_weight = sum(weight for _, weight in weights)
+    if total_weight <= 0:
+        return {idx: 0 for idx, _ in weights}
+
+    exact = {idx: (weight / total_weight) * total_percent for idx, weight in weights}
+    allocated = {idx: int(value) for idx, value in exact.items()}
+    remaining = total_percent - sum(allocated.values())
+
+    order = sorted(
+        weights,
+        key=lambda item: (exact[item[0]] - int(exact[item[0]]), item[1]),
+        reverse=True,
+    )
+    for idx, _weight in order[:remaining]:
+        allocated[idx] += 1
+    return allocated
 
 
 def create_interface(ip_data, intf_prefix, md=None):
     my_data = {}
     my_data["config"] = {}
     my_data["network_info"] = {}
+    vrf_syntax = get_vrf_syntax(md) if md is not None else "OLD"
     intf_nums = list(ip_data["interface"])
-    
-    tot_pri_num = ip_data["pri-1-10"].sum()
-    max_prc = 75
+    qos_percentages = _allocate_qos_percentages(ip_data, total_percent=75)
     
     pol_maps= {}
 
@@ -674,10 +888,7 @@ def create_interface(ip_data, intf_prefix, md=None):
         pri_num = row["pri-1-10"]
         top_num = str(pri_afxx)[0]
 
-        if tot_pri_num == 0:
-            pri_prc = 0
-        else:
-            pri_prc = int((pri_num / tot_pri_num)*max_prc)
+        pri_prc = qos_percentages.get(index, 0)
 
         intf = row["interface"]
         sub = True if intf_nums.count(intf) > 1 else False
@@ -718,7 +929,7 @@ def create_interface(ip_data, intf_prefix, md=None):
                     "exit"
                 ]
 
-        intf_s.append(f"ip vrf forwarding {vrf}")
+        intf_s.append(_vrf_forwarding_command(vrf, vrf_syntax))
         intf_s.append(f"ip address {ip_address} {mask}")
         intf_s.append("no ip redirects")
         intf_s.append("no ip proxy-arp")
@@ -795,20 +1006,60 @@ def create_interface(ip_data, intf_prefix, md=None):
     return my_data
 
 
-def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, is_hub,psk=DEFAULT_IPSEC_PSK):
-    """
-    Lager IPsec-konfigurasjon for en DMVPN-tunnel.
-    """
+def create_ipsec_config(
+    tunnel, source, sn, sites_data, network_id, vrf, is_hub,
+    psk=DEFAULT_IPSEC_PSK, ike_version="IKEV2"
+):
+    """Generate IPsec for one DMVPN cloud using IKEv1 or IKEv2."""
     suffix = str(network_id).strip()
+    transform_set = f"DMVPN-TS-{suffix}"
+    ipsec_profile = f"DMVPN-IPSEC-{suffix}"
+    config = {}
 
+    other_sites = sites_data.copy()
+    other_sites.pop("hub", None)
+    other_sites.pop(f"site {sn}", None)
+
+    if ike_version == "IKEV1":
+        # IKEv1 is kept deliberately conservative for older IOS platforms.
+        # Unique tunnel source-loopbacks let us bind a PSK to each remote peer.
+        policy_id = int(float(network_id))
+        config[f"crypto isakmp policy {policy_id}"] = [
+            "encryption aes 256",
+            "hash sha",
+            "authentication pre-share",
+            "group 14",
+            "exit",
+        ]
+
+        for site, site_data in other_sites.items():
+            tun = site_data.get("network_info", {}).get(tunnel, {})
+            peer_source = tun.get("source", "")
+            if not peer_source:
+                continue
+            mask = "255.255.255.255"
+            config[f"crypto isakmp key {psk} address {peer_source} {mask}"] = []
+
+            # A newly processed spoke must also be accepted by already-generated
+            # peers so Phase 2/3 dynamic spoke-to-spoke IPsec can establish.
+            sites_data[site]["config"][
+                f"crypto isakmp key {psk} address {source} {mask}"
+            ] = []
+
+        config[
+            f"crypto ipsec transform-set {transform_set} esp-aes 256 esp-sha-hmac"
+        ] = ["mode transport", "exit"]
+        config[f"crypto ipsec profile {ipsec_profile}"] = [
+            f"set transform-set {transform_set}",
+            "exit",
+        ]
+        return config, ipsec_profile, sites_data
+
+    # IKEv2 / named profile variant.
     proposal = f"DMVPN-IKEV2-PROP-{suffix}"
     policy = f"DMVPN-IKEV2-POL-{suffix}"
     keyring = f"DMVPN-IKEV2-KR-{suffix}"
     ikev2_profile = f"DMVPN-IKEV2-PROFILE-{suffix}"
-    transform_set = f"DMVPN-TS-{suffix}"
-    ipsec_profile = f"DMVPN-IPSEC-{suffix}"
-
-    config = {}
 
     config[f"crypto ikev2 proposal {proposal}"] = [
         "encryption aes-cbc-256",
@@ -816,61 +1067,43 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, is_hub,
         "group 14",
         "exit",
     ]
-
-    config[f"crypto ikev2 policy {policy}"] = [
-        f"proposal {proposal}",
-        "exit",
-    ]
+    config[f"crypto ikev2 policy {policy}"] = [f"proposal {proposal}", "exit"]
 
     remots_s = []
     my_stuff = source
-    other_sites = sites_data.copy()
-    del other_sites["hub"]
+    for site, site_data in other_sites.items():
+        tun = site_data.get("network_info", {}).get(tunnel, {})
+        ip_address = tun.get("source", "")
+        if not ip_address:
+            continue
+        mask = "255.255.255.255"
+        remots_s.append(f"address {ip_address} {mask}")
 
-    if len(other_sites) > 0:
-        if f"site {sn}" in other_sites:
-            del other_sites[f"site {sn}"]
+        keyring_key = f"crypto ikev2 keyring {keyring}"
+        profile_key = f"crypto ikev2 profile {ikev2_profile}"
+        if keyring_key not in sites_data[site]["config"] or profile_key not in sites_data[site]["config"]:
+            raise ValueError(
+                f"IPsec-oppsettet for {tunnel} er inkonsistent mellom site {sn} og {site}. "
+                "Samme DMVPN-cloud må bruke IKEv2/IPsec på alle deltakende sites."
+            )
 
-        for site, site_data in other_sites.items():
-            tun = site_data["network_info"].get(tunnel, [])
+        site_pers = sites_data[site]["config"][keyring_key][0]["peer ANY"]
+        site_pers = [f"address {my_stuff} {mask}"] + site_pers
+        sites_data[site]["config"][keyring_key][0]["peer ANY"] = ensure_exit_last(site_pers)
 
-            ip_address = tun.get("source", "")
-            mask = "255.255.255.255"
-            remots_s.append(f"address {ip_address} {mask}")
-
-            # Oppdater allerede genererte sites når en ny DMVPN-peer blir kjent.
-            # IKKE bruk set() her: Cisco CLI er rekkefølgeavhengig, og `exit` må stå sist.
-            keyring_key = f"crypto ikev2 keyring {keyring}"
-            profile_key = f"crypto ikev2 profile {ikev2_profile}"
-
-            if keyring_key not in sites_data[site]["config"] or profile_key not in sites_data[site]["config"]:
-                raise ValueError(
-                    f"IPsec-oppsettet for {tunnel} er inkonsistent mellom site {sn} og {site}. "
-                    "Samme DMVPN-cloud må bruke IPsec på alle deltakende sites."
-                )
-
-            site_pers = sites_data[site]["config"][keyring_key][0]["peer ANY"]
-            site_pers = [f"address {my_stuff} {mask}"] + site_pers
-            sites_data[site]["config"][keyring_key][0]["peer ANY"] = ensure_exit_last(site_pers)
-
-            site_profile_pers = sites_data[site]["config"][profile_key]
-            new_match = f"match identity remote address {my_stuff} {mask}"
-            site_profile_pers = [new_match] + site_profile_pers
-            sites_data[site]["config"][profile_key] = ensure_exit_last(site_profile_pers)
-
+        site_profile_pers = sites_data[site]["config"][profile_key]
+        new_match = f"match identity remote address {my_stuff} {mask}"
+        site_profile_pers = [new_match] + site_profile_pers
+        sites_data[site]["config"][profile_key] = ensure_exit_last(site_profile_pers)
 
     peer = ensure_exit_last(
-        remots_s
-        + [
+        remots_s + [
             f"pre-shared-key local {psk}",
             f"pre-shared-key remote {psk}",
         ]
     )
-
     config[f"crypto ikev2 keyring {keyring}"] = [
-        {
-            "peer ANY": peer
-        },
+        {"peer ANY": peer},
         "exit",
     ]
 
@@ -882,27 +1115,20 @@ def create_ipsec_config(tunnel, source, sn, sites_data, network_id, vrf, is_hub,
             f"keyring local {keyring}",
         ]
     )
-
     config[f"crypto ikev2 profile {ikev2_profile}"] = prof_peer
-
 
     config[
         f"crypto ipsec transform-set {transform_set} esp-aes 256 esp-sha256-hmac"
-    ] = [
-        "mode transport",
-        "exit",
-    ]
-
+    ] = ["mode transport", "exit"]
     config[f"crypto ipsec profile {ipsec_profile}"] = [
         f"set transform-set {transform_set}",
         f"set ikev2-profile {ikev2_profile}",
         "exit",
     ]
-
     return config, ipsec_profile, sites_data
 
 
-def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
+def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn, dmvpn_phase=3, vrf_syntax="OLD", eigrp_syntax="NAMED", ike_version="IKEV2"):
     my_data = {}
     my_data["network_info"] = {}
     my_data["config"] = {}
@@ -946,6 +1172,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
 
         tunnel_info = {
             "is hub": is_hub,
+            "dmvpn phase": dmvpn_phase,
             "vrf": vrf,
             "ip address": ip_address,
             "mask": mask,
@@ -958,7 +1185,7 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
         my_data["network_info"][tunnel] = tunnel_info
 
         tun_s = []
-        tun_s.append(f"ip vrf forwarding {vrf}")
+        tun_s.append(_vrf_forwarding_command(vrf, vrf_syntax))
         tun_s.append(f"qos pre-classify")
         tun_s.append(f"ip address {ip_address} {mask}")
         tun_s.append(f"tunnel source loopback{network_id+1}")
@@ -977,10 +1204,22 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
                 tun_s.append("ip nhrp map multicast dynamic")
 
             tun_s.append(f"ip nhrp network-id {network_id}")
-            if is_hub:
-                tun_s.append("ip nhrp redirect")
-            else:
-                tun_s.append("ip nhrp shortcut")
+            # Phase 3 bruker NHRP Redirect/Shortcut. Phase 2 utelater disse
+            # kommandoene og er dermed kompatibel med eldre plattformer som
+            # ikke støtter Phase 3.
+            if dmvpn_phase == 3:
+                if is_hub:
+                    tun_s.append("ip nhrp redirect")
+                else:
+                    tun_s.append("ip nhrp shortcut")
+
+            # In classic EIGRP, interface-specific DMVPN knobs live directly
+            # on the tunnel interface instead of under named-mode af-interface.
+            if eigrp_syntax == "CLASSIC" and is_hub:
+                tun_s.append(f"no ip split-horizon eigrp {int(float(network_id))}")
+                if dmvpn_phase == 2:
+                    tun_s.append(f"no ip next-hop-self eigrp {int(float(network_id))}")
+
             tun_s.append("no ip redirects")
             tun_s.append(f"tunnel key {network_id}")
 
@@ -989,7 +1228,9 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
 
         # IPsec aktiveres bare når kolonnen 'ipsec' er TRUE/1/yes/ja/x.
         if ipsec_enabled:
-            ipsec_config, ipsec_profile, sites_data = create_ipsec_config(tunnel,source, sn, sites_data, network_id, vrf, is_hub, psk)
+            ipsec_config, ipsec_profile, sites_data = create_ipsec_config(
+                tunnel, source, sn, sites_data, network_id, vrf, is_hub, psk, ike_version
+            )
             my_data["config"].update(ipsec_config)
             tun_s.append(f"tunnel protection ipsec profile {ipsec_profile}")
 
@@ -1001,76 +1242,92 @@ def create_tunnel_config(tunnel_data, sites_data: dict, is_hub: bool, sn):
     return my_data, sites_data
 
 
-def create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub):
-    my_data = {}
-    my_data["network_info"] = {}
-    my_data["config"] = {}
-
+def create_tunnel_eigrp_config(
+    vrf_data, tunnel_data, ip_data, is_hub, dmvpn_phase=3, eigrp_syntax="NAMED"
+):
+    my_data = {"network_info": {}, "config": {}}
     vrfs = {}
-    networks = []
 
-    for idx, row in tunnel_data.iterrows():
-        network_id = row["network-id"]
+    for _, row in tunnel_data.iterrows():
+        network_id = int(float(row["network-id"]))
         tun = row["tunnel id"]
-
         vrf = row["vrf"]
-        vrfs[vrf] = []
-
         ip = row["ip address"]
         mask = row["mask"]
+        vrfs[vrf] = {
+            "as": network_id,
+            "tunnel": tun,
+            "networks": [getNetId(ip, mask)],
+        }
 
-        netinfo = getNetId(ip, mask)
-        networks.append(netinfo)
+    for _, row in ip_data.iterrows():
+        vrf = row["vrf"]
+        if vrf in vrfs:
+            vrfs[vrf]["networks"].append(getNetId(row["nett id"], row["mask"]))
 
-        vrfs[vrf].insert(0, network_id)
-        vrfs[vrf].insert(1, tun)
-        vrfs[vrf].append(netinfo)
-
-    for idx, row in ip_data.iterrows():
-        if row["vrf"] in vrfs:
-            network = row["nett id"]
-            mask = row["mask"]
-            vrfs[row["vrf"]].append(getNetId(network, mask))
-
-    tun_s = {}
-
-    for vrf, nets in vrfs.items():
-        tun_vrf_s = []
-
-        for net in nets[2:]:
-            if isinstance(net, tuple):
-                network, mask, wild = net
-                tun_vrf_s.append(f"network {network} {wild}")
-           
-        
+    for vrf, data in vrfs.items():
         vrf_laddr = vrf_data[vrf_data["vrf"] == vrf].iloc[0].get("laddr", "")
         if vrf_laddr:
-            tun_vrf_s.append(f"network {vrf_laddr} 0.0.0.0")
+            data["networks"].append((vrf_laddr, "255.255.255.255", "0.0.0.0"))
 
-        tun_vrf_s.append(f"\n")
-        tun_vrf_s.append(f"af-interface default")
-        tun_vrf_s.append(f"passive-interface")
-        tun_vrf_s.append(f"exit-af-interface\n")
+    if eigrp_syntax == "CLASSIC":
+        # Classic mode keeps per-interface split-horizon/next-hop-self commands
+        # on the tunnel itself (added by create_tunnel_config).
+        router_body = {}
+        for vrf, data in vrfs.items():
+            af_lines = []
+            for network, _mask, wild in data["networks"]:
+                af_lines.append(f"network {network} {wild}")
+            af_lines.extend([
+                "passive-interface default",
+                f"no passive-interface {data['tunnel']}",
+            ])
+            if is_hub and vrf == "INET":
+                af_lines.append("redistribute static metric 100000 10 255 1 1500")
+            af_lines.append("exit-address-family")
+            router_body[
+                f"address-family ipv4 vrf {vrf} autonomous-system {data['as']}"
+            ] = af_lines
+        router_body["exit"] = []
+        my_data["config"]["router eigrp 1"] = router_body
+        return my_data
 
-        tun_vrf_s.append(f"af-interface {nets[1]}")
+    # Named EIGRP mode.
+    router_body = {}
+    for vrf, data in vrfs.items():
+        af_lines = []
+        for network, _mask, wild in data["networks"]:
+            af_lines.append(f"network {network} {wild}")
+
+        af_lines.extend([
+            "\n",
+            "af-interface default",
+            "passive-interface",
+            "exit-af-interface\n",
+            f"af-interface {data['tunnel']}",
+        ])
         if is_hub:
-            tun_vrf_s.append("no split-horizon")
-            tun_vrf_s.append("no next-hop-self")
-        tun_vrf_s.append(f"no passive-interface")
-        tun_vrf_s.append("exit-af-interface\n")
+            af_lines.append("no split-horizon")
+            if dmvpn_phase == 2:
+                af_lines.append("no next-hop-self")
+        af_lines.extend([
+            "no passive-interface",
+            "exit-af-interface\n",
+        ])
+        if is_hub and vrf == "INET":
+            af_lines.append({
+                "topology base": [
+                    "redistribute static metric 100000 10 255 1 1500",
+                    "exit-af-topology",
+                ]
+            })
+        af_lines.append("exit-address-family")
+        router_body[
+            f"address-family ipv4 vrf {vrf} autonomous-system {data['as']}"
+        ] = af_lines
 
-        if is_hub:
-            if vrf == "INET":
-                tun_vrf_s.append({"topology base": ["redistribute static metric 100000 10 255 1 1500", "exit-af-topology"]})
-
-        tun_vrf_s.append("exit-address-family")
-        tun_s[
-            f"address-family ipv4 vrf {vrf} autonomous-system {nets[0]}"
-        ] = tun_vrf_s
-
-    tun_s["exit"] = []
-    my_data["config"]["router eigrp DMVPN-EIGRP"] = tun_s
-
+    router_body["exit"] = []
+    my_data["config"]["router eigrp DMVPN-EIGRP"] = router_body
     return my_data
 
 
@@ -1097,6 +1354,94 @@ def _get_management_server_ip(md, names, label):
         raise ValueError(f"Ugyldig {label}-server-IP i Excel: {value}") from exc
 
 
+def _get_snmpv3_settings(md):
+    """Return validated SNMPv3 polling settings, or None when disabled.
+
+    Excel fields:
+      snmpv3_enabled, snmp_server_ip, snmp_user,
+      snmp_auth_password, snmp_priv_password
+
+    SHA authentication + AES-128 privacy are intentionally fixed for a
+    conservative SNMPv3 authPriv profile that works across the lab platforms.
+    """
+    if md is None or md.empty:
+        return None
+
+    row = md.iloc[0]
+    enabled_value = None
+    for name in ("snmpv3_enabled", "snmpv3 enabled", "snmp_enabled", "snmp enabled"):
+        if name in row.index:
+            enabled_value = row.get(name)
+            break
+
+    if not is_true(enabled_value):
+        return None
+
+    server_ip = _get_management_server_ip(
+        md,
+        ["snmp_server_ip", "snmp server ip", "nms_server_ip", "nms server ip"],
+        "SNMP/NMS",
+    )
+    user = _metadata_value(md, ("snmp_user", "snmp user"))
+    auth_password = _metadata_value(md, ("snmp_auth_password", "snmp auth password"))
+    priv_password = _metadata_value(md, ("snmp_priv_password", "snmp priv password"))
+
+    missing = []
+    if not user:
+        missing.append("snmp_user")
+    if not auth_password:
+        missing.append("snmp_auth_password")
+    if not priv_password:
+        missing.append("snmp_priv_password")
+    if missing:
+        raise ValueError(
+            "SNMPv3 er aktivert, men følgende Excel-felt mangler: " + ", ".join(missing)
+        )
+
+    if any(ch.isspace() for ch in user):
+        raise ValueError("snmp_user kan ikke inneholde mellomrom")
+    if len(auth_password) < 8:
+        raise ValueError("snmp_auth_password må være minst 8 tegn")
+    if len(priv_password) < 8:
+        raise ValueError("snmp_priv_password må være minst 8 tegn")
+
+    return {
+        "server_ip": server_ip,
+        "user": user,
+        "auth_password": auth_password,
+        "priv_password": priv_password,
+    }
+
+
+def create_snmpv3_config(md):
+    """Generate read-only SNMPv3 authPriv polling configuration.
+
+    Access is restricted to the configured NMS IP. Traps are deliberately not
+    enabled here; this option is for NMS polling over UDP/161.
+    """
+    my_data = {"config": {}, "network_info": {}}
+    settings = _get_snmpv3_settings(md)
+    if settings is None:
+        return my_data
+
+    server_ip = settings["server_ip"]
+    user = settings["user"]
+    auth_password = settings["auth_password"]
+    priv_password = settings["priv_password"]
+
+    my_data["config"]["ip access-list standard SNMP-NMS-ONLY"] = [
+        f"permit host {server_ip}",
+        "deny any",
+        "exit",
+    ]
+    my_data["config"]["snmp-server view NMS-READ iso included"] = []
+    my_data["config"]["snmp-server group NMS v3 priv read NMS-READ access SNMP-NMS-ONLY"] = []
+    my_data["config"][
+        f"snmp-server user {user} NMS v3 auth sha {auth_password} priv aes 128 {priv_password}"
+    ] = []
+    return my_data
+
+
 def create_tacacs_config(md, ip_data, sites_data, is_hub):
     my_data = {"config": {}, "network_info": {}}
     if md.empty:
@@ -1111,16 +1456,29 @@ def create_tacacs_config(md, ip_data, sites_data, is_hub):
     tacacs_key = row.get("tacacs_key", "")
     if pd.isna(tacacs_key) or not str(tacacs_key).strip():
         raise ValueError("TACACS-key mangler i Excel")
+    tacacs_key = str(tacacs_key).strip()
+    tacacs_syntax = get_tacacs_syntax(md)
 
     if is_hub:
-        print(f"TACACS server: {tacacs_server}")
+        print(f"TACACS server: {tacacs_server} ({tacacs_syntax} syntax)")
 
     my_data["config"]["aaa new-model"] = []
+    if tacacs_syntax == "NEW":
+        my_data["config"]["tacacs server TACACS-SERVER"] = [
+            f"address ipv4 {tacacs_server}",
+            f"key {tacacs_key}",
+            "exit",
+        ]
+        group_server = "server name TACACS-SERVER"
+    else:
+        my_data["config"][f"tacacs-server host {tacacs_server} key {tacacs_key}"] = []
+        group_server = f"server {tacacs_server}"
+
     my_data["config"]["aaa group server tacacs+ TACACS-GROUP"] = [
-        f"server-private {tacacs_server} key {str(tacacs_key).strip()}",
+        group_server,
         "ip vrf forwarding MGMT",
-        "ip tacacs source-interface loop10",
-        "exit"
+        "ip tacacs source-interface loopback10",
+        "exit",
     ]
     my_data["config"]["aaa authentication login default group TACACS-GROUP local"] = []
     my_data["config"]["aaa authorization exec default group TACACS-GROUP local"] = []
@@ -1184,9 +1542,8 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
         return my_data
 
     my_data["config"][f"ip domain name {domain}"] = []
-    my_data["config"][
-        f"username {username} privilege 15 secret 9 {password}"
-    ] = []
+    secret_type = get_secret_type(md)
+    my_data["config"][_secret_command(f"username {username} privilege 15", password, secret_type)] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
     
@@ -1272,9 +1629,10 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     my_data["network_info"] = {}
 
     secret = md.iloc[0].get("secret", "")
+    secret_type = get_secret_type(md)
 
     my_data["config"][f"hostname RS{sn}"] = []
-    my_data["config"][f"enable secret 9 {secret}"] = []
+    my_data["config"][_secret_command("enable", secret, secret_type)] = []
     my_data["config"]["service tcp-keepalives-in"] = []
     my_data["config"]["service tcp-keepalives-out"] = []
     my_data["config"]["no ip source-route"] = []
@@ -1374,7 +1732,16 @@ def set_up_DHCP_for_vrf_lans(ip_data, md):
         mask = row["mask"]
         num_res = int(float(row["antall-res"]))
 
-        ip_res_to = str(ipaddress.ip_address(ip_gw) + num_res)
+        if num_res < 0:
+            raise ValueError(f"{vrf}: antall-res kan ikke være negativt ({num_res}).")
+        # antall-res is a COUNT including the gateway address.  If 40 addresses
+        # are reserved starting at .1, the excluded range must end at .40
+        # (not .41).
+        ip_res_to = (
+            str(ipaddress.ip_address(ip_gw) + num_res - 1)
+            if num_res > 0
+            else None
+        )
 
         pool = [
             f"vrf {vrf}",
@@ -1387,7 +1754,8 @@ def set_up_DHCP_for_vrf_lans(ip_data, md):
 
         my_config["config"][f"ip dhcp pool DHCP-{vrf}"] = pool
 
-        my_config["config"][f"ip dhcp excluded-address vrf {vrf} {ip_gw} {ip_res_to}"] = []
+        if ip_res_to is not None:
+            my_config["config"][f"ip dhcp excluded-address vrf {vrf} {ip_gw} {ip_res_to}"] = []
 
         my_config["network_info"][f"DHCP-{vrf}"] = {
             "network": network,
@@ -1406,30 +1774,44 @@ def config_nat(md, is_hub):
 
     if is_hub:
         intf_prefix = md.iloc[0]["intf_prefix"]
+        isp_vlan = get_isp_vlan(md)
+        isp_interface = f"{intf_prefix}0.{isp_vlan}"
 
         my_config["config"]["!\ninterface tunnel20"] = [
             "ip nat inside",
             "exit"
         ]
 
-        my_config["config"][f"interface {intf_prefix}0.200"] = [
-            "encapsulation dot1Q 200",
+        my_config["config"][f"interface {isp_interface}"] = [
+            f"encapsulation dot1Q {isp_vlan}",
             "ip address dhcp",
             "ip nat outside",
             "no shutdown",
             "exit"
         ]
+
         my_config["config"]["ip access-list standard NAT-INET"] = [
             "permit any",
             "exit"
         ]
-        my_config["config"][f"ip nat inside source list NAT-INET interface {intf_prefix}0.200 vrf INET overload"] = []
+
+        my_config["config"][
+            f"ip nat inside source list NAT-INET interface {isp_interface} vrf INET overload"
+        ] = []
+
         my_config["config"][f"!\ninterface {intf_prefix}0.20"] = [
             "ip nat inside",
             "exit"
         ]
 
-        my_config["config"][f"ip route vrf INET 0.0.0.0 0.0.0.0 {intf_prefix}0.200 dhcp"] = []
+        my_config["config"][
+            f"ip route vrf INET 0.0.0.0 0.0.0.0 {isp_interface} dhcp"
+        ] = []
+
+        my_config["network_info"]["isp"] = {
+            "vlan": isp_vlan,
+            "interface": isp_interface,
+        }
 
     return my_config
 
@@ -1452,7 +1834,85 @@ def config_ntp(sites_data, is_hub):
     return my_config
     
     
-def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_context=None):
+def _router_site_id(value):
+    try:
+        f = float(value)
+        if f.is_integer():
+            return str(int(f))
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _router_is_hub(md, sheet_name):
+    row = md.iloc[0]
+    site = _router_site_id(row.get("site"))
+
+    for name in ("is_hub", "hub", "HUB"):
+        if name in row.index and not pd.isna(row.get(name)):
+            return is_true(row.get(name))
+    for name in ("role", "site_role", "site role"):
+        if name in row.index and not pd.isna(row.get(name)):
+            return str(row.get(name)).strip().upper() == "HUB"
+    for name in ("hub_site", "hub site"):
+        if name in row.index and not pd.isna(row.get(name)):
+            return _router_site_id(row.get(name)) == site
+
+    if "HUB" in str(sheet_name).upper():
+        return True
+    return site == "1"
+
+
+def _validate_dmvpn_clouds(filename, site_sheets):
+    """Validate that every site uses the same addressing/model per DMVPN cloud."""
+    clouds = {}
+    seen_source_ips = set()
+    for sheet in site_sheets:
+        data = read_sheet(filename, sheet)
+        md = data["md"]
+        site = _router_site_id(md.iloc[0]["site"])
+        ike_version = get_ike_version(md)
+        for _, row in data["tunnel_data"].iterrows():
+            tunnel = _normalise_cell_text(row.get("tunnel id")).lower()
+            vrf = _normalise_cell_text(row.get("vrf")).upper()
+            network_id = int(float(row.get("network-id")))
+            mask = _normalise_cell_text(row.get("mask"))
+            ip = _normalise_cell_text(row.get("ip address"))
+            ipsec = is_true(row.get("ipsec", False))
+            psk = row.get("ipsec key", DEFAULT_IPSEC_PSK)
+            if pd.isna(psk) or str(psk).strip() == "":
+                psk = DEFAULT_IPSEC_PSK + f"-{network_id}"
+            else:
+                psk = str(psk).strip()
+            try:
+                net = ipaddress.ip_network(f"{ip}/{mask}", strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Site {site} {tunnel}: ugyldig tunnel-IP/mask {ip} {mask}") from exc
+
+            base_source = _normalise_cell_text(row.get("source"))
+            try:
+                source = str(ipaddress.ip_address(base_source) + network_id + 1)
+            except ValueError as exc:
+                raise ValueError(f"Site {site} {tunnel}: ugyldig tunnel source-base {base_source}") from exc
+            if source in seen_source_ips:
+                raise ValueError(f"DMVPN source-loopback {source} brukes mer enn én gang.")
+            seen_source_ips.add(source)
+
+            signature = (vrf, network_id, str(net), ipsec, ike_version if ipsec else None, psk if ipsec else None)
+            if tunnel in clouds and clouds[tunnel]["signature"] != signature:
+                prev = clouds[tunnel]
+                raise ValueError(
+                    f"DMVPN-cloud {tunnel} er inkonsistent: Site {prev['site']} har "
+                    f"{prev['signature']}, Site {site} har {signature}. Samme tunnel må bruke "
+                    "samme VRF, network-id, tunnel-subnett, IPsec-status, IKE-versjon og PSK på alle sites."
+                )
+            clouds.setdefault(tunnel, {"signature": signature, "site": site, "ips": set()})
+            if ip in clouds[tunnel]["ips"]:
+                raise ValueError(f"DMVPN-cloud {tunnel}: tunnel-IP {ip} brukes av flere sites.")
+            clouds[tunnel]["ips"].add(ip)
+
+
+def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_context=None, dmvpn_phase=3):
     sheet_data = read_sheet(sheet_file, sheet)
 
     my_data = {}
@@ -1468,6 +1928,9 @@ def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_contex
     router_id = md.iloc[0]["router-id"]
     sn = md.iloc[0]["site"]
     intf_prefix = md.iloc[0]["intf_prefix"]
+    vrf_syntax = get_vrf_syntax(md)
+    eigrp_syntax = get_eigrp_syntax(md)
+    ike_version = get_ike_version(md)
 
     data, is_hub = fetch_site_data(config_file, sn)
     
@@ -1480,7 +1943,7 @@ def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_contex
     my_data["config"].update(d_ntp["config"])
     
     #VRF
-    d_vrf = create_vrf(vrf_data, sn)
+    d_vrf = create_vrf(vrf_data, sn, vrf_syntax)
     my_data["config"].update(d_vrf["config"])
     my_data["network_info"].update(d_vrf["network_info"])
 
@@ -1492,6 +1955,9 @@ def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_contex
     d_rsyslog = create_rsyslog_config(md, ip_data, data, is_hub)
     my_data["config"].update(d_rsyslog["config"])
 
+    #SNMPv3 / NMS polling
+    d_snmp = create_snmpv3_config(md)
+    my_data["config"].update(d_snmp["config"])
 
 
     #INTERFACE
@@ -1516,12 +1982,16 @@ def configure_site(sheet_file, config_file, sheet, flow_policy=None, flow_contex
     my_data["network_info"].update(d_dhcp["network_info"])
 
     #TUNNEL
-    d_tunnel, data = create_tunnel_config(tunnel_data, data, is_hub, sn)
+    d_tunnel, data = create_tunnel_config(
+        tunnel_data, data, is_hub, sn, dmvpn_phase, vrf_syntax, eigrp_syntax, ike_version
+    )
     my_data["config"].update(d_tunnel["config"])
     my_data["network_info"].update(d_tunnel["network_info"])
 
     #EIGRP
-    d_eigrp = create_tunnel_eigrp_config(vrf_data, tunnel_data, ip_data, is_hub)
+    d_eigrp = create_tunnel_eigrp_config(
+        vrf_data, tunnel_data, ip_data, is_hub, dmvpn_phase, eigrp_syntax
+    )
     my_data["config"].update(d_eigrp["config"])
     my_data["network_info"].update(d_eigrp["network_info"])
 
@@ -1588,23 +2058,52 @@ def create_or_update_config_files(data):
             f.write("\n".join(text))
     
     print()
-    print(f"Text versjon av config for edge router i site {site} er fullført og lagret i siteEdgeRouterTextConfigs/EDGE_ROUTER_{site.replace(' ', '_').upper()}.txt")
+    print(f"Text-versjoner av edge-router-configene er lagret i siteEdgeRouterTextConfigs/ ({len(data)} site(s)).")
     print()
     
 
 def create_edge_router_configs_main(file, config_file="EDGE_ROUTER_configs.json"):   
 
     sites_sheets = _site_sheet_names(file)
+    if not sites_sheets:
+        raise ValueError("Arbeidsboken inneholder ingen site-ark.")
+
+    _validate_dmvpn_clouds(file, sites_sheets)
+
+    # Resolve the HUB explicitly instead of assuming that the first sheet is HUB.
+    hub_sheets = []
+    for sheet in sites_sheets:
+        md = read_sheet(file, sheet)["md"]
+        if _router_is_hub(md, sheet):
+            hub_sheets.append(sheet)
+    if len(hub_sheets) != 1:
+        raise ValueError(f"Forventet nøyaktig ett HUB-site, fant {len(hub_sheets)}.")
+    hub_sheet = hub_sheets[0]
+    hub_md = read_sheet(file, hub_sheet)["md"]
+    hub_site = _router_site_id(hub_md.iloc[0]["site"])
+    dmvpn_phase = get_dmvpn_phase_from_hub(hub_md)
+    print(f"DMVPN Phase {dmvpn_phase} valgt fra HUB-arket ({hub_sheet}).")
+    ordered_sheets = [hub_sheet] + [s for s in sites_sheets if s != hub_sheet]
+
     flow_policy = read_flow_policy(file)
     flow_context = (
         build_flow_policy_context(file, sites_sheets)
         if flow_policy is not None and not flow_policy.empty
         else {}
     )
-    
-    for sheet in sites_sheets:
+
+    # Clean model prevents stale sites/commands from previous runs.
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump({"hub": f"site {hub_site}"}, f, indent=4)
+
+    for sheet in ordered_sheets:
         data = configure_site(
-            file, config_file, sheet, flow_policy=flow_policy, flow_context=flow_context
+            file,
+            config_file,
+            sheet,
+            flow_policy=flow_policy,
+            flow_context=flow_context,
+            dmvpn_phase=dmvpn_phase,
         )
     
     create_or_update_config_files(data)

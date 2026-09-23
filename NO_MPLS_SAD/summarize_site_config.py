@@ -303,15 +303,16 @@ def summarize_router(site_key: str, site_data: dict[str, Any], router_root: dict
         for name, info in sorted(tunnels, key=lambda x: natural_key(x[0])):
             ipsec = "IPsec" if info.get("ipsec") else "uten IPsec"
             tunnel_cfg = config.get(f"interface {name}", [])
-            phase3 = ""
-            if isinstance(tunnel_cfg, list):
+            phase = info.get("dmvpn phase")
+            phase_text = f", Phase {phase}" if phase in (2, 3) else ""
+            if isinstance(tunnel_cfg, list) and phase == 3:
                 if "ip nhrp redirect" in tunnel_cfg:
-                    phase3 = ", Phase 3 HUB/redirect"
+                    phase_text += " HUB/redirect"
                 elif "ip nhrp shortcut" in tunnel_cfg:
-                    phase3 = ", Phase 3 SPOKE/shortcut"
+                    phase_text += " SPOKE/shortcut"
             lines.append(
                 f"    - {name}: {info.get('vrf')} {info.get('ip address')} "
-                f"({info.get('mode')}), source {info.get('source')}, {ipsec}{phase3}"
+                f"({info.get('mode')}), source {info.get('source')}, {ipsec}{phase_text}"
             )
 
     hardening = []
@@ -402,7 +403,11 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
             and "access port for vlan" in desc_l
             and "dedicated management" not in desc_l
         ):
-            access_entries.append((display_if, access_vlan))
+            dot1x_enabled = (
+                "dot1x port-control auto" in cfg
+                or "authentication port-control auto" in cfg
+            )
+            access_entries.append((display_if, access_vlan, dot1x_enabled))
 
         if "uplink" in desc_l and "port-channel" not in str(key).lower():
             uplinks.append(
@@ -525,8 +530,9 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
 
     if access_entries:
         lines.append("    Accessporter:")
-        for port, vlan in access_entries:
-            lines.append(f"      - {port}: VLAN {vlan}")
+        for port, vlan, dot1x_enabled in access_entries:
+            auth = " | 802.1X/RADIUS" if dot1x_enabled else ""
+            lines.append(f"      - {port}: VLAN {vlan}{auth}")
 
     if uplinks:
         lines.append("    Uplink:")
@@ -571,6 +577,10 @@ def summarize_switch(sw_name: str, config: dict[str, Any]) -> list[str]:
         security.append("VTP transparent")
     if "aaa new-model" in config:
         security.append("TACACS+/AAA")
+    if config_has_key(config, "radius-server host "):
+        security.append("RADIUS")
+    if "dot1x system-auth-control" in config:
+        security.append("802.1X")
     if config_has_key(config, "aaa accounting commands 15 "):
         security.append("AAA accounting")
     if "ip ssh version 2" in config:
@@ -634,7 +644,7 @@ def build_summary(
     header = [
         "NETTVERKSKONFIGURASJON - OPPSUMMERING",
         f"Sites: {', '.join(site_number(x) for x in sites)}",
-        "Merk: passord, enable secrets og TACACS-nøkler vises ikke.",
+        "Merk: passord, enable secrets, TACACS-nøkler og RADIUS-nøkler vises ikke.",
         "",
     ]
 

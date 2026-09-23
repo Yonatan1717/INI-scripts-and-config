@@ -16,6 +16,8 @@ VALID_SPAN_MODES = {"SPAN", "RSPAN", "ERSPAN"}
 MONITORING_VRF = "MONITORING"
 DEFAULT_ERSPAN_ID = 100
 REQUIRE_MONITORING_TUNNEL_FOR_ERSPAN = True
+RADIUS_AUTH_PORT = 1812
+RADIUS_ACCT_PORT = 1813
 
 
 def _clean_header(value):
@@ -130,6 +132,82 @@ def _int_value(obj, names, default=0):
         return int(float(value))
     except (TypeError, ValueError):
         return int(default)
+
+
+def _normalise_compat_choice(value, field, allowed, default):
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return default
+    text = str(value).strip().upper().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "OLD": "OLD", "LEGACY": "LEGACY", "GAMMEL": "OLD",
+        "NEW": "NEW", "NY": "NEW",
+        "AUTHENTICATION": "AUTH", "AUTH": "AUTH",
+        "ACCESSSESSION": "ACCESS_SESSION", "ACCESS_SESSION": "ACCESS_SESSION",
+        "AUTO": "AUTO", "DOT1Q": "DOT1Q_CMD", "DOT1Q_CMD": "DOT1Q_CMD",
+        "WITH_CMD": "DOT1Q_CMD", "NO_CMD": "NO_CMD", "NONE": "NO_CMD",
+        "5": "5", "8": "8", "9": "9",
+    }
+    text = aliases.get(text, text)
+    if text not in allowed:
+        raise ValueError(
+            f"Ugyldig {field}='{value}'. Gyldige verdier: {', '.join(allowed)}"
+        )
+    return text
+
+
+def _top_compat(md_top, field, allowed, default):
+    if md_top is None or md_top.empty:
+        return default
+    value = _value(md_top.iloc[0], [field, field.replace("_", " ")], None)
+    return _normalise_compat_choice(value, field, allowed, default)
+
+
+def _switch_compat(row, md_top, field, allowed, default):
+    # Per-switch cell wins; blank inherits the site's top metadata default.
+    value = _value(row, [field, field.replace("_", " ")], None)
+    if value is None:
+        return _top_compat(md_top, field, allowed, default)
+    return _normalise_compat_choice(value, field, allowed, default)
+
+
+def _secret_command(prefix, value, secret_type):
+    value = "" if pd.isna(value) else str(value).strip()
+    if not value:
+        raise ValueError(f"Tom secret/passordverdi for '{prefix}'.")
+    detected = None
+    for stype in ("5", "8", "9"):
+        if value.startswith(f"${stype}$"):
+            detected = stype
+            break
+    if secret_type == "AUTO":
+        if detected:
+            return f"{prefix} secret {detected} {value}"
+        return f"{prefix} secret 0 {value}"
+    if detected and detected != secret_type:
+        raise ValueError(
+            f"secret_type={secret_type}, men verdien for '{prefix}' er et type {detected}-hash. "
+            "Bytt enten secret_type eller bruk en hash av riktig type."
+        )
+    if detected is None:
+        raise ValueError(
+            f"secret_type={secret_type} krever en ferdig type {secret_type}-hash for '{prefix}'. "
+            "Bruk AUTO dersom cellen inneholder plaintext."
+        )
+    return f"{prefix} secret {secret_type} {value}"
+
+
+def _dot1x_port_control_command(dot1x_syntax):
+    return {
+        "LEGACY": "dot1x port-control auto",
+        "AUTH": "authentication port-control auto",
+        "ACCESS_SESSION": "access-session port-control auto",
+    }[dot1x_syntax]
+
+
+def _include_trunk_encapsulation_command(mode):
+    # AUTO intentionally preserves the legacy generator behaviour. Platforms
+    # with fixed 802.1Q encapsulation should explicitly select NO_CMD.
+    return mode in {"AUTO", "DOT1Q_CMD"}
 
 
 def _site_id(value):
@@ -357,6 +435,143 @@ def _get_syslog_server_ip(md_top):
         ["syslog_server_ip", "rsyslog_server_ip", "syslog server ip", "syslog_server"],
         "Syslog",
     )
+
+
+def _get_radius_server_ip(md_top, required=False):
+    """Read an optional central RADIUS server address from top metadata."""
+    if md_top is None or md_top.empty:
+        if required:
+            raise ValueError("RADIUS-server mangler i Excel-metadata.")
+        return None
+
+    value = _value(
+        md_top.iloc[0],
+        ["radius_server_ip", "radius server ip", "radius_server"],
+        None,
+    )
+    if value is None:
+        if required:
+            raise ValueError("RADIUS-server mangler i Excel. Forventet felt: radius_server_ip.")
+        return None
+    try:
+        return str(ipaddress.ip_address(str(value).strip()))
+    except ValueError as exc:
+        raise ValueError(f"Ugyldig RADIUS-server-IP i Excel: {value}") from exc
+
+
+def _get_radius_key(md_top, required=False):
+    if md_top is None or md_top.empty:
+        if required:
+            raise ValueError("RADIUS-key mangler i Excel-metadata.")
+        return None
+    value = _value(md_top.iloc[0], ["radius_key", "radius key"], None)
+    if value is None or not str(value).strip():
+        if required:
+            raise ValueError("RADIUS-key mangler i Excel. Forventet felt: radius_key.")
+        return None
+    return str(value).strip()
+
+
+def _get_snmpv3_settings(md_top):
+    """Return validated SNMPv3 polling settings, or None when disabled."""
+    if md_top is None or md_top.empty:
+        return None
+
+    row = md_top.iloc[0]
+    enabled = _value(
+        row,
+        ["snmpv3_enabled", "snmpv3 enabled", "snmp_enabled", "snmp enabled"],
+        False,
+    )
+    if not _is_true(enabled):
+        return None
+
+    server_ip = _get_management_server_ip(
+        md_top,
+        ["snmp_server_ip", "snmp server ip", "nms_server_ip", "nms server ip"],
+        "SNMP/NMS",
+    )
+    user = _value(row, ["snmp_user", "snmp user"], None)
+    auth_password = _value(row, ["snmp_auth_password", "snmp auth password"], None)
+    priv_password = _value(row, ["snmp_priv_password", "snmp priv password"], None)
+
+    missing = []
+    if user is None or not str(user).strip():
+        missing.append("snmp_user")
+    if auth_password is None or not str(auth_password).strip():
+        missing.append("snmp_auth_password")
+    if priv_password is None or not str(priv_password).strip():
+        missing.append("snmp_priv_password")
+    if missing:
+        raise ValueError(
+            "SNMPv3 er aktivert, men følgende Excel-felt mangler: " + ", ".join(missing)
+        )
+
+    user = str(user).strip()
+    auth_password = str(auth_password).strip()
+    priv_password = str(priv_password).strip()
+    if any(ch.isspace() for ch in user):
+        raise ValueError("snmp_user kan ikke inneholde mellomrom")
+    if len(auth_password) < 8:
+        raise ValueError("snmp_auth_password må være minst 8 tegn")
+    if len(priv_password) < 8:
+        raise ValueError("snmp_priv_password må være minst 8 tegn")
+
+    return {
+        "server_ip": server_ip,
+        "user": user,
+        "auth_password": auth_password,
+        "priv_password": priv_password,
+    }
+
+
+def create_snmpv3_config(md_top):
+    """Generate read-only SNMPv3 authPriv polling config restricted to the NMS."""
+    my_data = {"config": {}, "network_info": {}}
+    settings = _get_snmpv3_settings(md_top)
+    if settings is None:
+        return my_data
+
+    server_ip = settings["server_ip"]
+    user = settings["user"]
+    auth_password = settings["auth_password"]
+    priv_password = settings["priv_password"]
+
+    my_data["config"]["ip access-list standard SNMP-NMS-ONLY"] = [
+        f"permit host {server_ip}",
+        "deny any",
+        "exit",
+    ]
+    my_data["config"]["snmp-server view NMS-READ iso included"] = []
+    my_data["config"]["snmp-server group NMS v3 priv read NMS-READ access SNMP-NMS-ONLY"] = []
+    my_data["config"][
+        f"snmp-server user {user} NMS v3 auth sha {auth_password} priv aes 128 {priv_password}"
+    ] = []
+    return my_data
+
+
+def _get_dot1x_vlans(md):
+    """Return VLANs where user/client access ports require IEEE 802.1X."""
+    if md is None or md.empty:
+        return set()
+    value = _value(md.iloc[0], ["dot1x_vlans", "dot1x vlans", "8021x_vlans"], None)
+    if value is None:
+        return set()
+
+    raw = str(value).replace(";", ",").replace(" ", ",")
+    result = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            vlan = int(float(token))
+        except ValueError as exc:
+            raise ValueError(f"Ugyldig VLAN i dot1x_vlans: {token}") from exc
+        if not 1 <= vlan <= 4094 or vlan == 999:
+            raise ValueError(f"Ugyldig VLAN i dot1x_vlans: {vlan}")
+        result.add(vlan)
+    return result
 
 
 def _find_vrf_rows(df, vrf_name):
@@ -589,9 +804,10 @@ def _validate_erspan_architecture_for_workbook(file, sheets):
 
 
 def _validate_management_servers_for_workbook(file, sheets):
-    """Ensure TACACS/Syslog server IPs are explicit, consistent and in HUB MGMT."""
+    """Validate centralized TACACS/Syslog/RADIUS and switch MGMT identities."""
     values = []
     hub_record = None
+    switch_mgmt_ips = {}
 
     for sheet in sheets:
         sheet_data = read_sheet(file, sheet)
@@ -600,27 +816,70 @@ def _validate_management_servers_for_workbook(file, sheets):
         site = _site_id(md.iloc[0]["site"])
         tacacs = _get_tacacs_server_ip(md_top)
         syslog = _get_syslog_server_ip(md_top)
-        values.append((site, tacacs, syslog))
+        radius = _get_radius_server_ip(md_top, required=False)
+        radius_key = _get_radius_key(md_top, required=False)
+        dot1x_vlans = _get_dot1x_vlans(md)
+
+        if (radius is None) != (radius_key is None):
+            raise ValueError(
+                f"Site {site}: radius_server_ip og radius_key må enten begge være satt eller begge være tomme."
+            )
+        if dot1x_vlans and radius is None:
+            raise ValueError(
+                f"Site {site}: dot1x_vlans er satt, men radius_server_ip/radius_key mangler."
+            )
+
+        values.append((site, tacacs, syslog, radius, radius_key))
         if _is_hub_site(md, md_top, site):
             if hub_record is not None:
                 raise ValueError("Flere HUB-sites funnet ved validering av management-servere.")
-            hub_record = (site, sheet_data, tacacs, syslog)
+            hub_record = (site, sheet_data, tacacs, syslog, radius, radius_key)
+
+        # Validate every switch MGMT IP against this site's MGMT subnet. These
+        # addresses are also the NAS/client addresses written to FreeRADIUS.
+        mgmt_rows = _find_vrf_rows(sheet_data.get("ip_data"), "MGMT")
+        if mgmt_rows.empty:
+            raise ValueError(f"Site {site}: finner ikke MGMT-subnett for switch-validering.")
+        r = mgmt_rows.iloc[0]
+        mgmt_net = ipaddress.ip_network(
+            f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
+        )
+        for _, sw_row in sheet_data["swi_data"].iterrows():
+            sw_id = _switch_id(sw_row["SW"])
+            raw_ip = _value(sw_row, ["MGMT ip", "mgmt ip", "mgmt_ip"], None)
+            if raw_ip is None:
+                raise ValueError(f"Site {site} SW{sw_id}: MGMT ip mangler.")
+            try:
+                addr = ipaddress.ip_address(str(raw_ip).strip())
+            except ValueError as exc:
+                raise ValueError(f"Site {site} SW{sw_id}: ugyldig MGMT ip {raw_ip}.") from exc
+            if addr not in mgmt_net or addr in {mgmt_net.network_address, mgmt_net.broadcast_address}:
+                raise ValueError(
+                    f"Site {site} SW{sw_id}: MGMT ip {addr} må være gyldig host i {mgmt_net}."
+                )
+            if str(addr) in switch_mgmt_ips:
+                raise ValueError(
+                    f"MGMT ip {addr} brukes både av {switch_mgmt_ips[str(addr)]} og Site {site} SW{sw_id}."
+                )
+            switch_mgmt_ips[str(addr)] = f"Site {site} SW{sw_id}"
 
     if hub_record is None:
-        raise ValueError("Fant ikke HUB-site ved validering av TACACS/Syslog-servere.")
+        raise ValueError("Fant ikke HUB-site ved validering av management-servere.")
 
     tacacs_values = {x[1] for x in values}
     syslog_values = {x[2] for x in values}
-    if len(tacacs_values) != 1 or len(syslog_values) != 1:
+    radius_values = {x[3] for x in values}
+    radius_keys = {x[4] for x in values}
+    if len(tacacs_values) != 1 or len(syslog_values) != 1 or len(radius_values) != 1 or len(radius_keys) != 1:
         detail = ", ".join(
-            f"Site {site}: TACACS={tacacs}, Syslog={syslog}"
-            for site, tacacs, syslog in values
+            f"Site {site}: TACACS={tacacs}, Syslog={syslog}, RADIUS={radius}"
+            for site, tacacs, syslog, radius, _radius_key in values
         )
         raise ValueError(
-            "TACACS/Syslog-serverne må være konsistente mellom site-arkene. " + detail
+            "TACACS/Syslog/RADIUS-innstillingene må være konsistente mellom site-arkene. " + detail
         )
 
-    site, sheet_data, tacacs, syslog = hub_record
+    site, sheet_data, tacacs, syslog, radius, radius_key = hub_record
     mgmt_rows = _find_vrf_rows(sheet_data.get("ip_data"), "MGMT")
     if mgmt_rows.empty:
         raise ValueError(f"HUB Site {site}: finner ikke MGMT-subnett for servervalidering.")
@@ -628,14 +887,24 @@ def _validate_management_servers_for_workbook(file, sheets):
     mgmt_net = ipaddress.ip_network(
         f"{r.get('nett id', r.get('address min'))}/{r['mask']}", strict=False
     )
-    for label, server in (("TACACS", tacacs), ("Syslog", syslog)):
+    server_pairs = [("TACACS", tacacs), ("Syslog", syslog)]
+    if radius is not None:
+        server_pairs.append(("RADIUS", radius))
+    for label, server in server_pairs:
         addr = ipaddress.ip_address(server)
         if addr not in mgmt_net or addr in {mgmt_net.network_address, mgmt_net.broadcast_address}:
             raise ValueError(
                 f"{label}-server {server} må ligge som gyldig host i HUB MGMT-nettet {mgmt_net}."
             )
 
-    return {"tacacs": tacacs, "syslog": syslog, "same_server": tacacs == syslog}
+    return {
+        "tacacs": tacacs,
+        "syslog": syslog,
+        "radius": radius,
+        "radius_key": radius_key,
+        "switch_mgmt_ips": switch_mgmt_ips,
+        "same_server": tacacs == syslog == radius if radius is not None else tacacs == syslog,
+    }
 
 
 def _validate_span_modes_for_workbook(file, sheets):
@@ -739,7 +1008,7 @@ def _build_port_plan(row, md, md_top, swi_data, site, is_hub=False):
     """Build deterministic physical port allocation for a switch.
 
     Every switch keeps one dedicated MGMT access port as before.  On HUB SW1
-    that port is the TACACS/Syslog server port when both services share an IP.
+    that port is the TACACS/RADIUS/Syslog server port when the services share an IP.
     If the service IPs differ, HUB SW1 reserves one additional MGMT port for
     Syslog/Security Onion management.  SPAN/RSPAN reserve a local destination
     port on SW1; ERSPAN reserves a mirror destination port only on HUB SW1.
@@ -885,17 +1154,34 @@ def _build_port_plan(row, md, md_top, swi_data, site, is_hub=False):
     }
 
 
-def create_tacacs_config(md_top):
+def create_tacacs_config(md_top, switch_row=None):
     my_data = {"config": {}, "network_info": {}}
     tacacs_server = _get_tacacs_server_ip(md_top)
     tacacs_key = md_top.iloc[0].get("tacacs_key", "")
 
     if pd.isna(tacacs_key) or not str(tacacs_key).strip():
         raise ValueError("TACACS-key mangler i Excel")
+    tacacs_key = str(tacacs_key).strip()
+    syntax = (
+        _switch_compat(switch_row, md_top, "tacacs_syntax", ("OLD", "NEW"), "NEW")
+        if switch_row is not None
+        else _top_compat(md_top, "tacacs_syntax", ("OLD", "NEW"), "NEW")
+    )
 
     my_data["config"]["aaa new-model"] = []
+    if syntax == "NEW":
+        my_data["config"]["tacacs server TACACS-SERVER"] = [
+            f"address ipv4 {tacacs_server}",
+            f"key {tacacs_key}",
+            "exit",
+        ]
+        group_server = "server name TACACS-SERVER"
+    else:
+        my_data["config"][f"tacacs-server host {tacacs_server} key {tacacs_key}"] = []
+        group_server = f"server {tacacs_server}"
+
     my_data["config"]["aaa group server tacacs+ TACACS-GROUP"] = [
-        f"server-private {tacacs_server} key {str(tacacs_key).strip()}",
+        group_server,
         "ip tacacs source-interface Vlan10",
         "exit",
     ]
@@ -903,6 +1189,47 @@ def create_tacacs_config(md_top):
     my_data["config"]["aaa authorization exec default group TACACS-GROUP local"] = []
     my_data["config"]["aaa accounting exec default start-stop group TACACS-GROUP"] = []
     my_data["config"]["aaa accounting commands 15 default start-stop group TACACS-GROUP"] = []
+    return my_data
+
+
+def create_radius_dot1x_config(md_top, mgmt_vlan, switch_row=None):
+    """Generate switch-side RADIUS + IEEE 802.1X global configuration."""
+    my_data = {"config": {}, "network_info": {}}
+    radius_server = _get_radius_server_ip(md_top, required=False)
+    radius_key = _get_radius_key(md_top, required=False)
+    if radius_server is None and radius_key is None:
+        return my_data
+    if radius_server is None or radius_key is None:
+        raise ValueError("radius_server_ip og radius_key må begge være satt for 802.1X.")
+
+    syntax = (
+        _switch_compat(switch_row, md_top, "radius_syntax", ("OLD", "NEW"), "NEW")
+        if switch_row is not None
+        else _top_compat(md_top, "radius_syntax", ("OLD", "NEW"), "NEW")
+    )
+
+    if syntax == "NEW":
+        my_data["config"]["radius server CLIENT-RADIUS"] = [
+            f"address ipv4 {radius_server} auth-port {RADIUS_AUTH_PORT} acct-port {RADIUS_ACCT_PORT}",
+            f"key {radius_key}",
+            "exit",
+        ]
+        my_data["config"]["aaa group server radius DOT1X-RADIUS"] = [
+            "server name CLIENT-RADIUS",
+            "exit",
+        ]
+        radius_group = "DOT1X-RADIUS"
+    else:
+        my_data["config"][
+            f"radius-server host {radius_server} auth-port {RADIUS_AUTH_PORT} acct-port {RADIUS_ACCT_PORT} key {radius_key}"
+        ] = []
+        radius_group = "radius"
+
+    my_data["config"][f"ip radius source-interface Vlan{mgmt_vlan}"] = []
+    my_data["config"][f"aaa authentication dot1x default group {radius_group}"] = []
+    my_data["config"][f"aaa authorization network default group {radius_group}"] = []
+    my_data["config"][f"aaa accounting dot1x default start-stop group {radius_group}"] = []
+    my_data["config"]["dot1x system-auth-control"] = []
     return my_data
 
 
@@ -918,7 +1245,7 @@ def create_rsyslog_config(md_top):
     return my_data
 
 
-def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None):
+def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None, secret_type="AUTO"):
     my_data = {"config": {}, "network_info": {}}
     if md.empty:
         return my_data
@@ -937,7 +1264,7 @@ def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None):
         return my_data
 
     my_data["config"][f"ip domain name {domain}"] = []
-    my_data["config"][f"username {username} privilege 15 secret 9 {password}"] = []
+    my_data["config"][_secret_command(f"username {username} privilege 15", password, secret_type)] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
 
@@ -1006,18 +1333,22 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
         mask = row["mask"]
         intf_prefix = str(row["intf_prefix"]).strip()
         plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
+        secret_type = _switch_compat(
+            row, md_top, "secret_type", ("AUTO", "5", "8", "9"), "AUTO"
+        )
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
         sw_cfg = info["config"][sw_name]
 
         sw_cfg[f"hostname {sw_name}"] = []
-        sw_cfg[f"enable secret 9 {secret}"] = []
+        sw_cfg[_secret_command("enable", secret, secret_type)] = []
         sw_cfg["service tcp-keepalives-in"] = []
         sw_cfg["service tcp-keepalives-out"] = []
         sw_cfg["vtp mode transparent"] = []
         sw_cfg["banner motd ^CKun autorisert tilgang er tillatt. Aktivitet kan bli logget.^C"] = []
-        sw_cfg.update(create_tacacs_config(md_top)["config"])
+        sw_cfg.update(create_tacacs_config(md_top, row)["config"])
+        sw_cfg.update(create_radius_dot1x_config(md_top, mgmt_vlan, row)["config"])
         sw_cfg["line console 0"] = [
             "login authentication default",
             "exec-timeout 10 0",
@@ -1030,8 +1361,14 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
             mgmt_network, mgmt_wildcard = str(mgmt_net.network_address), str(mgmt_net.hostmask)
         except (ValueError, TypeError):
             pass
-        sw_cfg.update(enable_ssh(md, mgmt_network=mgmt_network, mgmt_wildcard=mgmt_wildcard)["config"])
+        sw_cfg.update(
+            enable_ssh(
+                md, mgmt_network=mgmt_network, mgmt_wildcard=mgmt_wildcard,
+                secret_type=secret_type
+            )["config"]
+        )
         sw_cfg.update(create_rsyslog_config(md_top)["config"])
+        sw_cfg.update(create_snmpv3_config(md_top)["config"])
 
         sw_cfg[f"vlan {mgmt_vlan}"] = [f"name MGMT_VLAN_{mgmt_vlan}", "exit"]
         sw_cfg[f"interface vlan {mgmt_vlan}"] = [
@@ -1054,8 +1391,6 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                 "no shutdown",
                 "exit",
             ]
-            sw_cfg[f"ip route 0.0.0.0 0.0.0.0 {gateway}"] = []
-
             destination_ip = ipaddress.ip_address(erspan_destination)
             if destination_ip not in monitoring["network"]:
                 sw_cfg[
@@ -1063,10 +1398,10 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                 ] = []
 
         # Preserve the existing dedicated MGMT port on every switch.  On HUB SW1
-        # it becomes the physical server handoff for TACACS/Syslog.
+        # it becomes the physical server handoff for TACACS/RADIUS/Syslog.
         if is_hub and plan["is_primary_switch"]:
             if tacacs_server == syslog_server:
-                mgmt_desc = "Dedicated TACACS/Syslog management server port"
+                mgmt_desc = "Dedicated TACACS/RADIUS/Syslog management server port"
             else:
                 mgmt_desc = "Dedicated TACACS management server port"
         else:
@@ -1106,7 +1441,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                 "no shutdown",
                 "exit",
             ]
-            sw_cfg[f"monitor session 1 source vlan {','.join(map(str, span_vlans))} both"] = []
+            sw_cfg[f"monitor session 1 source vlan {' , '.join(map(str, span_vlans))} both"] = []
             sw_cfg[f"monitor session 1 destination interface {intf_prefix}{plan['span_port']}"] = []
 
         elif span_mode == "RSPAN":
@@ -1124,7 +1459,7 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                 sw_cfg[f"monitor session 1 source remote vlan {rspan_vlan}"] = []
                 sw_cfg[f"monitor session 1 destination interface {intf_prefix}{plan['span_port']}"] = []
             else:
-                sw_cfg[f"monitor session 1 source vlan {','.join(map(str, span_vlans))} both"] = []
+                sw_cfg[f"monitor session 1 source vlan {' , '.join(map(str, span_vlans))} both"] = []
                 sw_cfg[f"monitor session 1 destination remote vlan {rspan_vlan}"] = []
 
         elif span_mode == "ERSPAN":
@@ -1172,8 +1507,21 @@ def global_config(md, md_top, swi_data, ip_data, vrf_data, is_hub, erspan_contex
                         "switchen har ingen klient-accessporter å speile."
                     )
 
-        if span_mode_site != "ERSPAN":
+        # ERSPAN requires L3 routing on the switch because the MONITORING SVI
+        # must be able to reach remote ERSPAN endpoints. Once ip routing is
+        # enabled, ip default-gateway is not used for normal routed traffic, so
+        # always install a real default route via the MGMT gateway.
+        #
+        # Do this explicitly from span_mode_site instead of inferring state from
+        # the generated command dictionary. This makes the behaviour deterministic
+        # and guarantees that SW1/SW2/... get a management return path whenever
+        # ERSPAN enables ip routing. More-specific MONITORING /32 routes still win
+        # over this default route by longest-prefix match.
+        if span_mode_site == "ERSPAN":
+            sw_cfg[f"ip route 0.0.0.0 0.0.0.0 {gateway}"] = []
+        else:
             sw_cfg[f"ip default-gateway {gateway}"] = []
+
         sw_cfg[f"ntp server {gateway}"] = []
 
     return info
@@ -1194,6 +1542,7 @@ def config_vlan(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
     # VLAN exists only on that switch.  Build a site-wide union so intermediate
     # switches can actually forward VLANs used farther downstream.
     site_service_vlans = _site_service_vlans(swi_data, md, is_hub)
+    dot1x_vlans = _get_dot1x_vlans(md)
 
     for _, row in swi_data.iterrows():
         sw_id = _switch_id(row["SW"])
@@ -1201,6 +1550,9 @@ def config_vlan(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
         intf_prefix = str(row["intf_prefix"]).strip()
         plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
         local_vlan_info = plan["vlan_info"]
+        dot1x_syntax = _switch_compat(
+            row, md_top, "dot1x_syntax", ("LEGACY", "AUTH", "ACCESS_SESSION"), "AUTH"
+        )
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
@@ -1270,27 +1622,38 @@ def config_vlan(swi_data, site, md, md_top, ip_data, vrf_data, is_hub):
                 "ip verify source",
                 "spanning-tree bpduguard enable",
                 "spanning-tree portfast",
-                "no shutdown",
-                "exit",
             ])
+            if vlan in dot1x_vlans:
+                # Compatibility syntax supported by the older Catalyst 3560
+                # and accepted by Catalyst 3850. Do not place 802.1X on
+                # infrastructure/server/trunk ports.
+                port_cfg.extend([
+                    _dot1x_port_control_command(dot1x_syntax),
+                    "dot1x pae authenticator",
+                ])
+            port_cfg.extend(["no shutdown", "exit"])
             sw_cfg[key] = port_cfg
 
     return info
 
 
-def _trunk_config(vlans, description, channel_group=None, trusted=True, stp_guard=None):
-    """Build trunk config with optional per-interface STP guard."""
+def _trunk_config(
+    vlans, description, channel_group=None, trusted=True, stp_guard=None,
+    trunk_encapsulation="AUTO"
+):
+    """Build trunk config with optional encapsulation command and STP guard."""
     if stp_guard not in {None, "root", "loop"}:
         raise ValueError(f"Ugyldig STP guard: {stp_guard}")
 
-    lines = [
-        description,
-        "switchport trunk encapsulation dot1q",
+    lines = [description]
+    if _include_trunk_encapsulation_command(trunk_encapsulation):
+        lines.append("switchport trunk encapsulation dot1q")
+    lines.extend([
         "switchport trunk native vlan 999",
         "switchport mode trunk",
         "switchport nonegotiate",
         f"switchport trunk allowed vlan {','.join(map(str, vlans))}",
-    ]
+    ])
     if trusted:
         lines.extend(["ip dhcp snooping trust", "ip arp inspection trust"])
     if channel_group is not None:
@@ -1321,6 +1684,10 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
         mgmt_vlan = _int_value(row, ["MGMT Vlan"], 10)
         intf_prefix = str(row["intf_prefix"]).strip()
         plan = _build_port_plan(row, md, md_top, swi_data, site, is_hub)
+        trunk_encapsulation = _switch_compat(
+            row, md_top, "trunk_encapsulation",
+            ("AUTO", "DOT1Q_CMD", "NO_CMD"), "AUTO"
+        )
 
         sw_name = f"SW{sw_id}-SITE-{site}"
         info["config"].setdefault(sw_name, {})
@@ -1378,6 +1745,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 f"description UPLINK EtherChannel member(s) - Port-channel{uplink_po}",
                 channel_group=uplink_po,
                 trusted=True,
+                trunk_encapsulation=trunk_encapsulation,
             )
             sw_cfg[f"interface Port-channel{uplink_po}"] = _trunk_config(
                 switch_link_vlans,
@@ -1385,6 +1753,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 f"for VLAN {','.join(map(str, switch_link_vlans))}",
                 trusted=True,
                 stp_guard="loop",
+                trunk_encapsulation=trunk_encapsulation,
             )
             first_downlink_channel = 2
         else:
@@ -1399,6 +1768,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                 f"description {uplink_desc} for VLAN {','.join(map(str, uplink_vlans))}",
                 trusted=True,
                 stp_guard=None if plan["is_primary_switch"] else "loop",
+                trunk_encapsulation=trunk_encapsulation,
             )
             first_downlink_channel = 1
 
@@ -1413,6 +1783,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     f"description DOWNLINK EtherChannel member(s) - Port-channel{channel_id}",
                     channel_group=channel_id,
                     trusted=False,
+                    trunk_encapsulation=trunk_encapsulation,
                 )
                 sw_cfg[f"interface Port-channel{channel_id}"] = _trunk_config(
                     switch_link_vlans,
@@ -1420,6 +1791,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     f"{','.join(map(str, switch_link_vlans))}",
                     trusted=False,
                     stp_guard="root",
+                    trunk_encapsulation=trunk_encapsulation,
                 )
         else:
             for idx, ports in enumerate(plan["downlink_groups"], start=1):
@@ -1429,6 +1801,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     f"{','.join(map(str, switch_link_vlans))}",
                     trusted=False,
                     stp_guard="root",
+                    trunk_encapsulation=trunk_encapsulation,
                 )
 
         # New num_ports_tot model: skipped ports are real physical interfaces,
@@ -1560,12 +1933,13 @@ def config_to_text(data, indent=0):
 
 
 def create_or_update_config_files(data):
-    os.makedirs("siteSwichTextConfigs", exist_ok=True)
+    output_root = "siteSwitchTextConfigs"
+    os.makedirs(output_root, exist_ok=True)
 
     for site, site_data in data.items():
         if site == "_mgmt_networks":
             continue
-        site_dir = f"siteSwichTextConfigs/{site}"
+        site_dir = f"{output_root}/{site}"
         os.makedirs(site_dir, exist_ok=True)
 
         for sw_name, config in site_data["config"].items():
@@ -1573,7 +1947,89 @@ def create_or_update_config_files(data):
             with open(f"{site_dir}/{sw_name}.txt", "w", encoding="utf-8") as f:
                 f.write("\n".join(text))
 
-    print("Text versjon av switch-configene er lagret i siteSwichTextConfigs/")
+    print(f"Text versjon av switch-configene er lagret i {output_root}/")
+
+
+def create_freeradius_config(file, sheets):
+    """Write a FreeRADIUS client snippet using each switch's MGMT SVI address."""
+    records = []
+    radius_server = None
+    radius_key = None
+
+    for sheet in sheets:
+        sheet_data = read_sheet(file, sheet)
+        md = sheet_data["md"]
+        md_top = sheet_data["md_top"]
+        site = _site_id(md.iloc[0]["site"])
+        this_server = _get_radius_server_ip(md_top, required=False)
+        this_key = _get_radius_key(md_top, required=False)
+        if this_server is None and this_key is None:
+            continue
+        if this_server is None or this_key is None:
+            raise ValueError(f"Site {site}: ufullstendig RADIUS-konfigurasjon i Excel.")
+        if radius_server is None:
+            radius_server, radius_key = this_server, this_key
+        elif (this_server, this_key) != (radius_server, radius_key):
+            raise ValueError("RADIUS-server/key må være identisk på alle sites.")
+
+        for _, row in sheet_data["swi_data"].iterrows():
+            sw_id = _switch_id(row["SW"])
+            name = f"SW{sw_id}-SITE-{site}"
+            mgmt_ip = str(ipaddress.ip_address(str(row["MGMT ip"]).strip()))
+            records.append((site, int(sw_id), name, mgmt_ip))
+
+    if radius_server is None:
+        return
+
+    records.sort(key=lambda x: (int(x[0]), x[1]))
+    os.makedirs("freeradius", exist_ok=True)
+
+    lines = [
+        "# Generated by NO_MPLS_SAD",
+        "# Append/include this snippet from your FreeRADIUS clients.conf.",
+        f"# RADIUS server: {radius_server}",
+        "",
+    ]
+    for _site, _sw_id, name, mgmt_ip in records:
+        lines.extend([
+            f"client {name} {{",
+            f"    ipaddr = {mgmt_ip}",
+            f"    secret = {radius_key}",
+            f"    shortname = {name}",
+            "}",
+            "",
+        ])
+
+    with open("freeradius/clients_network_switches.conf", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+
+    readme = f"""FreeRADIUS / 802.1X generated configuration
+===========================================
+
+RADIUS server IP: {radius_server}
+Authentication port: {RADIUS_AUTH_PORT}/UDP
+Accounting port: {RADIUS_ACCT_PORT}/UDP
+
+1. Install FreeRADIUS (Ubuntu/Debian):
+   sudo apt update && sudo apt install freeradius freeradius-utils
+
+2. Append the contents of clients_network_switches.conf to the active
+   FreeRADIUS clients.conf (commonly /etc/freeradius/3.0/clients.conf).
+
+3. Configure users/certificates and an EAP method separately. The generator
+   intentionally does not create a default username/password.
+
+4. Validate before restart:
+   sudo freeradius -XC
+   sudo freeradius -X
+
+The generated client IPs are the switches' MGMT SVI addresses. The switches
+source RADIUS packets from their MGMT SVI, so these addresses must match.
+"""
+    with open("freeradius/README_RADIUS.txt", "w", encoding="utf-8") as f:
+        f.write(readme)
+
+    print("FreeRADIUS client-konfig er lagret i freeradius/clients_network_switches.conf")
 
 
 def create_sw_configs_main(file, config_file="site_switch_config.json"):
@@ -1585,11 +2041,17 @@ def create_sw_configs_main(file, config_file="site_switch_config.json"):
     _validate_management_servers_for_workbook(file, sites_sheets)
     erspan_context = _validate_erspan_architecture_for_workbook(file, sites_sheets)
 
+    # Start each generation from a clean JSON model so removed/renamed sites or
+    # stale commands from an earlier workbook cannot survive a new run.
+    if os.path.exists(config_file):
+        os.remove(config_file)
+
     data = {}
     for sheet in sites_sheets:
         data = create_site_sw_config(file, sheet, config_file, erspan_context)
 
     create_or_update_config_files(data)
+    create_freeradius_config(file, sites_sheets)
 
 
 def main():
