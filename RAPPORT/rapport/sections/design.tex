@@ -367,7 +367,7 @@ Hver VRF har sitt eget DMVPN-overlay mellom sites. Dette gjør at segmenteringen
     \caption{Logisk design for nettverket på Site X.}
     \label{fig:logisk_ip}
 \end{figure}
-
+\noindent
 HUB-lokasjonen BNHQ skiller seg noe fra spoke-lokasjonene fordi sentrale servere og WAN-/ISP-tilkobling er plassert her. BNHQ fungerer samtidig som DMVPN-hub og som sentral lokasjon for administrasjon, logging, tidsdistribusjon og sikkerhetsovervåkning.
 
 \subsection{Nettverkssikkerhet}
@@ -400,6 +400,8 @@ Ved å kombinere nettverkstrafikk med sentrale systemlogger får administratoren
 
 \begin{table}[H]
 \centering
+\caption{Sikkerhetsmekanismer implementert på site-rutere.}
+\vspace{5pt}
 \small
 \setlength{\tabcolsep}{6pt}
 \rowcolors{2}{lightgreen}{white}
@@ -435,7 +437,6 @@ Begrenser etablering av EIGRP-naboskap til interface hvor routingprotokollen fak
 \bottomrule
 \end{tabular}
 \rowcolors{1}{}{}
-\caption{Sikkerhetsmekanismer implementert på site-rutere.}
 \label{tab:router-security}
 \end{table}
 
@@ -444,6 +445,8 @@ Begrenser etablering av EIGRP-naboskap til interface hvor routingprotokollen fak
 \begin{table}[H]
 
 \centering
+\caption{Sikkerhetsmekanismer implementert på svitsjer.}
+\vspace{5pt}
 \small
 
 \setlength{\tabcolsep}{6pt}
@@ -518,7 +521,6 @@ Gir redundans og økt tilgjengelighet på switch-to-switch-forbindelser. \\
 
 \rowcolors{1}{}{}
 
-\caption{Sikkerhetsmekanismer implementert på svitsjer.}
 \label{tab:switch-security}
 
 \end{table}
