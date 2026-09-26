@@ -321,53 +321,32 @@ Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenter
 BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester og WAN-/ISP-tilkoblingen ble samlet her. Dette ga et felles administrasjons- og overvåkningspunkt, men medførte også avhengigheter som måtte vurderes ved bortfall av BNHQ.
 
 \subsection{Nettverkssikkerhet}
-Sikkerhetsdesignet kombinerer segmentering, tilgangskontroll, autentisering, kryptering, lag-2-beskyttelse og sentral overvåkning. Ingen av mekanismene står alene, de skal utfylle hverandre.
-
-VRF-Lite reduserer muligheten for lateral kommunikasjon mellom tjenestenettene, mens ACL-er håndhever hvilke protokoller og tjenester som tillates fra det enkelte segment.
-
-Nettverksenhetene administreres over SSH fra definerte MGMT-nett. TACACS+ håndterer sentral autentisering, autorisasjon og accounting av administrativ aktivitet, mens en lokal bruker fungerer som reserve dersom den sentrale tjenesten ikke er tilgjengelig.
-
-DMVPN-overlay som fører trafikk med beskyttelsesbehov bruker IPsec for å hindre innsyn og manipulering under transport mellom lokasjonene.
-
-I aksesslaget brukes DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, Port Security og STP-beskyttelse. Tiltakene reduserer risikoen fra uautoriserte eller feilkonfigurerte enheter på klientportene.
+Sikkerhetsdesignet bygger på flere lag med tiltak. Tabell \ref{tab:router-security} og \ref{tab:switch-security} oppsummerer mekanismene som er implementert på henholdsvis rutere og svitsjer. Denne delen beskriver derfor hovedsakelig hvordan mekanismene brukes i løsningen og hvilke begrensninger som må tas hensyn til.
 
 \subsubsection{Tilgangskontroll mellom nettverk}
-ACL-ene håndhever trafikkpolicyen i K2, men de oppretter ikke ruting mellom VRF-er. Trafikk som skal krysse en VRF-grense krever derfor både en kontrollert rutingsmekanisme og en ACL som tillater den aktuelle flyten.
+VRF-Lite separerer rutingtabellene, mens trafikkpolicyen i \texttt{FLOW\_POLICY} bestemmer hvilken trafikk som eksplisitt tillates. Generatoren oversetter policyen til extended ACL-er som legges inbound på lokale lag-3-grensesnitt. ACL-ene oppretter ikke ruting mellom VRF-er; eventuell kommunikasjon på tvers av VRF-grenser krever derfor også en kontrollert rutingsmekanisme.
 
-Kommunikasjon mellom tjenestenettene styres av reglene i \texttt{FLOW\_POLICY}. Generatoren oversetter reglene til extended ACL-er og plasserer dem inbound på de lokale lag-3-grensesnittene for de oppførte kilde-VRF-ene. Dersom policyarket er tomt, genereres heller ingen slike ACL-er. Det må derfor kontrolleres at alle relevante kildesoner er dekket. Trafikk mellom klienter i samme VLAN passerer normalt ikke disse ruter-ACL-ene.
-
-Tjenestematrisen er den autoritative beskrivelsen av hvilken kommunikasjon som skal tillates. Hver genererte ACL avsluttes med en deny-regel med logging, slik at øvrig trafikk på de aktuelle grensesnittene blokkeres.
-
-Dette følger prinsippet om minste privilegium og begrenser hvor langt en kompromittert klient kan kommunisere i nettet.
+Hver genererte ACL avsluttes med en deny-regel med logging. Dersom \texttt{FLOW\_POLICY} er tom, genereres ingen slike ACL-er, og det må derfor kontrolleres at alle relevante kildesoner er representert i policyen.
 
 \subsubsection{Administrasjon og AAA}
-K4 ivaretas gjennom et eget administrasjonsnett, SSH og sentral AAA. Innlogging, rettigheter, logging og reserveinnlogging må likevel testes hver for seg.
+Administrativ tilgang er begrenset til MGMT-nettene. TACACS+ brukes som sentral AAA-tjeneste, mens en lokal bruker fungerer som reserve dersom den sentrale tjenesten er utilgjengelig.
 
-Fjernadministrasjon skjer med SSH versjon 2. Telnet er ikke en del av designet.
-
-ACL-en \texttt{SSH-MGMT-ONLY} begrenser VTY-tilgang til godkjente MGMT-nett, slik at andre segmenter ikke kan initiere administrative SSH-sesjoner.
-
-TACACS+ er den sentrale AAA-tjenesten. Generatorene konfigurerer innloggingsautentisering, EXEC-autorisasjon og accounting av EXEC-sesjoner og kommandoer på privilege-nivå 15. Det opprettes derimot ingen egen metodeliste for kommandoautorisasjon, så individuell godkjenning av hver kommando inngår ikke i denne generatorversjonen.
-
-En lokal bruker gir reserveinnlogging dersom TACACS+-tjenesten ikke er tilgjengelig. Samspillet mellom autentisering og EXEC-autorisasjon må verifiseres særskilt, og reservebrukeren skal ikke omgå et eksplisitt avslag fra en tilgjengelig TACACS+-server.
+Generatoren konfigurerer autentisering, EXEC-autorisasjon og accounting av EXEC-sesjoner og kommandoer på privilege-nivå 15. Denne generatorversjonen oppretter ikke en egen metodeliste for kommandoautorisasjon, og individuell godkjenning av hver kommando inngår derfor ikke i løsningen. Reserveinnlogging og oppførsel ved bortfall av TACACS+ må verifiseres i test.
 
 \subsubsection{Tilgangskontroll på klientporter}
-Utvalgte klientporter bruker IEEE 802.1X med RADIUS for å kontrollere hvem som får nettverkstilgang (K3). Aksessvitsjen fungerer som authenticator og RADIUS-klient mot FreeRADIUS. Server-, sensor- og infrastrukturlenker bruker egne portprofiler, mens endepunkter uten 802.1X-støtte må håndteres gjennom en dokumentert unntakspolicy.
+Utvalgte klientporter bruker IEEE 802.1X med RADIUS. Endepunkter som ikke støtter 802.1X må håndteres gjennom en dokumentert unntakspolicy.
 
-DHCP snooping blokkerer uautoriserte DHCP-servere, mens DAI, IP Source Guard og port security beskytter mot forfalskede adresser og uønsket bruk av klientporter. Inter-switch-forbindelser konfigureres som trusted for både DHCP snooping og DAI, slik at legitim DHCP- og ARP-trafikk fra underliggende svitsjer kan passere. Klientporter forblir untrusted. STP-beskyttelse begrenser i tillegg konsekvensene av feilkoblinger og bidrar til K6.
+Inter-switch-forbindelser er trusted for DHCP Snooping og DAI, slik at legitim DHCP- og ARP-trafikk fra underliggende svitsjer kan passere. Klientporter forblir untrusted. Dette skillet er viktig for at beskyttelsesmekanismene ikke skal blokkere legitim infrastrukturtrafikk.
 
 \subsubsection{Overvåkning, logging og tidsgrunnlag}
-Overvåkningen består av sentral syslog, trafikkspeiling til Security Onion og SNMPv3 med \texttt{authPriv}. Syslog og speilet trafikk gir grunnlag for hendelses- og sikkerhetsanalyse (K5), mens SNMP også brukes til tilstandsovervåkning og støtter K6. Trafikkspeilingen er passiv og blokkerer ikke angrep i seg selv.
+Syslog, SNMPv3 og trafikkspeiling gir sentral synlighet, men trafikkspeilingen er passiv og blokkerer ikke angrep.
 
-NTP gir enhetene et felles tidsgrunnlag. Rutergeneratoren setter hubben som \texttt{ntp master 8}, spoke-ruterne synkroniseres mot hubbens Loopback0-adresse, og svitsjene bruker lokal gateway. Denne generatorversjonen har verken ekstern autoritativ tidskilde eller reservekilde. Oppsettet kan derfor gi konsistente tidsstempler internt, men dokumenterer ikke korrekt UTC. Autoritativ tid, redundans, tidsavvik og oppførsel ved bortfall må avklares og testes separat.
+Ved ERSPAN mottar HUB SW1 de speilede strømmene og sender dem til en dedikert sensorport. På spoke-lokasjonene speiles inngående klienttrafikk, og SW1 speiler i tillegg trafikk som kommer inn fra ruteren. Inter-switch-trunker speiles ikke for å redusere duplikater. Trafikk som kun går lokalt på HUB SW1 fanges ikke av denne varianten.
 
-I ERSPAN-oppsettet mottar HUB SW1 de speilede strømene og sender dem videre til en dedikert sensorport. På de øvrige svitsjene speiles inngående klienttrafikk, og på lokasjonens SW1 speiles også trafikk som kommer inn fra ruteren. Inter-switch-trunker er utelatt for å unngå duplikater. Trafikk som bare går lokalt på HUB SW1 fanges ikke av denne varianten, og er derfor en kjent begrensning i dekningen (K5).
-
-Løsningen forutsetter at det aktuelle utstyret støtter valgt speilingsmetode og har tilstrekkelig kapasitet. Mengden speilet trafikk må begrenses slik at den ikke fortrenger operative tjenester. Overvåkningen har dessuten liten verdi uten en tydelig mottaker av varsler og en etablert rutine for oppfølging.
+NTP-oppsettet gir et felles internt tidsgrunnlag, men generatorversjonen benytter ikke en ekstern autoritativ tidskilde eller reservekilde. Løsningen gir derfor konsistente tidsstempler internt, men korrekt UTC og oppførsel ved bortfall må verifiseres separat.
 
 \subsubsection{Sikkerhetsmekanismer på rutere}
-Tabell \ref{tab:router-security} oppsummerer mekanismene i ruterdesignet. Segmentering og trafikkpolicy bidrar til K1 og K2, administrasjonsmekanismene til K4 og logging og tidssynkronisering til K5. Tabellen oppsummerer de valgte mekanismenes funksjon.
-
+Tabell \ref{tab:router-security} oppsummerer sikkerhetsmekanismene som inngår i ruterdesignet.
 
 \begin{table}[H]
 \centering
@@ -412,8 +391,7 @@ Begrenser etablering av EIGRP-naboskap til grensesnitt der rutingprotokollen fak
 \end{table}
 
 \subsubsection{Sikkerhetsmekanismer på svitsjer}
-Tabell \ref{tab:switch-security} oppsummerer tiltakene i aksesslaget. Klient- og portkontroll bidrar til K3, STP-beskyttelse og EtherChannel til K6, administrasjon til K4 og trafikkspeiling og logging til K5.
-
+Tabell \ref{tab:switch-security} oppsummerer sikkerhetsmekanismene som inngår i svitsjdesignet.
 
 \begin{table}[H]
 
@@ -498,6 +476,7 @@ Gir redundans og økt tilgjengelighet på forbindelser mellom svitsjer. \\
 
 \end{table}
 
+
 \subsection{Standardisering og konfigurasjonsgenerator}
 
 Konfigurasjonsgeneratoren bruker ett felles Excel-grunnlag for å produsere standardiserte konfigurasjoner for rutere og svitsjer. Excel-filen beskriver ønsket nettverksdesign, mens generatoren oversetter dette til enhetskonfigurasjon og filer som kan brukes videre av Ansible. Dette reduserer manuelt arbeid og gjør det enklere å bruke samme konfigurasjonsprinsipper på tvers av lokasjoner.
@@ -548,70 +527,9 @@ Konfigurasjonsgeneratoren bruker ett felles Excel-grunnlag for å produsere stan
     \rowcolors{1}{}{}
 \end{table}
 
-Excel-arbeidsboken er strukturert slik at nettverksdata og valg som varierer mellom lokasjoner kan endres uten at Python-koden må skrives om. Tabell \ref{tab:generator-input} viser hoveddataene generatoren forventer.
+Excel-arbeidsboken er strukturert slik at nettverksdata og valg som varierer mellom lokasjoner kan endres uten at Python-koden må skrives om. En detaljert oversikt over forventede tabeller, felter og betingede parametere er derfor lagt til som vedlegg.
 
-\begin{table}[H]
-    \centering
-    \caption{Forventet datagrunnlag i Excel-filen.}
-    \label{tab:generator-input}
-    \small
-    \renewcommand{\arraystretch}{1.35}
-    \setlength{\tabcolsep}{5pt}
-    \rowcolors{2}{lightgreen}{white}
-    \begin{tabular}{
-        >{\raggedright\arraybackslash}p{3cm}
-        >{\raggedright\arraybackslash}p{6.5cm}
-        >{\raggedright\arraybackslash}p{5.6cm}
-    }
-        \toprule
-        \rowcolor{tablegreen}
-        \color{white}\textbf{Del av Excel} &
-        \color{white}\textbf{Forventede data} &
-        \color{white}\textbf{Bruk} \\
-        \midrule
-
-        Site-/rutermetadata &
-        Site- og router-ID, interface-prefix, credentials/secret, HUB-rolle, tjenesteadresser og nøkler samt DMVPN-, IKE-, SNMP- og kompatibilitetsvalg. &
-        Felles parametere for ruter og sentrale tjenester. \\
-        \addlinespace[2pt]
-
-        IP-/VLAN-tabell &
-        VRF, VLAN, nett-ID, maske, gateway, fysisk grensesnitt, reserverte adresser og QoS/DSCP. &
-        Lager tjenestenett, DHCP, subinterfaces, ACL-bindinger og QoS. \\
-        \addlinespace[2pt]
-
-        VRF-tabell &
-        VRF-navn, loopback-nummer og -adresse. &
-        Oppretter VRF-er og stabile management-/rutingadresser. \\
-        \addlinespace[2pt]
-
-        Tunnel-tabell &
-        Tunnel-ID, VRF, tunneladresse/-maske, source-adresse, network-ID, GRE-modus, IPsec og eventuell nøkkel. &
-        Oppretter DMVPN-overlay, kildeloopbacker og eventuell IPsec. \\
-        \addlinespace[2pt]
-
-        Svitsjmetadata &
-        Site-ID, credentials/secret, EtherChannel-størrelse, speilingsmodus, 802.1X-VLAN og plattformvalg. &
-        Felles innstillinger for svitsjene. \\
-        \addlinespace[2pt]
-
-        Svitsjtabell &
-        Svitsj-ID, MGMT-adressering, interface-prefix, porter, downlinks, VLAN/port-fordeling og eventuell MONITORING-IP. &
-        Beregner portplan, trunker, EtherChannel, management og speiling. \\
-        \addlinespace[2pt]
-
-        \texttt{FLOW\_POLICY} &
-        \texttt{source}, \texttt{destination}, \texttt{protocol}, \texttt{destination\_port} og \texttt{action}. &
-        Oversettes til extended ACL-er mellom tjenestenettene. \\
-
-        \bottomrule
-    \end{tabular}
-    \rowcolors{1}{}{}
-\end{table}
-
-Enkelte felt er betingede. RADIUS-parametere kreves eksempelvis når 802.1X brukes, mens MONITORING-adresser og tunneldata kreves når ERSPAN skal transporteres mellom sites. Generatoren utfører også validering av blant annet adresser, portkapasitet, sentrale tjenesteparametere og DMVPN-oppsett før konfigurasjonene skrives ut.
-
-Excel-filen og de genererte konfigurasjonene beskriver ønsket tilstand. Den faktiske tilstanden på utstyret dokumenteres separat gjennom sikkerhetskopi av \texttt{running-config}, som beskrevet i neste del.
+\textcolor{red}{\textbf{Se vedlegg XXX for forventet datagrunnlag og struktur i Excel-arbeidsboken.}}
 
 \subsection{Utrulling, sikkerhetskopi og gjenoppretting}
 
