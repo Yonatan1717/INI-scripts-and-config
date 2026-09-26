@@ -1,0 +1,49 @@
+---
+- name: Verify restored configuration
+  hosts: cisco
+  gather_facts: false
+
+  tasks:
+
+    - name: Verify device is reachable after restore
+      cisco.ios.ios_facts:
+        gather_subset:
+          - min
+
+    - name: Compare restored file with running-config
+      cisco.ios.ios_command:
+        commands:
+          - "show archive config differences flash:/ansible-restore.cfg system:running-config"
+      register: config_diff
+
+    - name: Remove known harmless differences
+      ansible.builtin.set_fact:
+        meaningful_diff: >-
+          {{
+            config_diff.stdout_lines[0]
+            | map('trim')
+            | reject('equalto', '')
+            | reject('match', '^!Contextual Config Diffs:$')
+            | reject('match', '^[+-]Building configuration.*$')
+            | reject('match', '^[+-]Current configuration.*$')
+            | reject('match', '^[+-]banner motd .*$')
+            | list
+          }}
+
+    - name: Show meaningful differences
+      ansible.builtin.debug:
+        var: meaningful_diff
+
+    - name: Verify banner text exists
+      cisco.ios.ios_command:
+        commands:
+          - "show running-config | include autorisert tilgang"
+      register: banner_check
+
+    - name: Verify restore
+      ansible.builtin.assert:
+        that:
+          - "meaningful_diff | length == 0"
+          - "'Kun autorisert tilgang er tillatt' in banner_check.stdout[0]"
+        success_msg: "Restore verified successfully on {{ inventory_hostname }}"
+        fail_msg: "Restore verification failed on {{ inventory_hostname }}"

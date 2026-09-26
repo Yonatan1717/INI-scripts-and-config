@@ -1,0 +1,18 @@
+---
+- name: Daily backup
+  hosts: cisco
+  gather_facts: false
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Back up running-config
+      ansible.netcommon.cli_backup:
+        dir_path: "{{ backup_root }}/{{ inventory_hostname }}/daily"
+        filename: "{{ inventory_hostname }}_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}.cfg"
+      register: backup_result
+
+    - name: Show backup file
+      ansible.builtin.debug:
+        var: backup_result.backup_path

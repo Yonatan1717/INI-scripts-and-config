@@ -155,7 +155,7 @@ def _collect_switch_inventory(switch_data):
     return switches
 
 
-def generate_ansible_inventory(output_dir):
+def generate_ansible_inventory(output_dir, store_ini_in):
     """Lag inventory.ini fra JSON-filene som router- og switchgeneratorene nettopp produserte."""
     router_json = output_dir / "EDGE_ROUTER_configs.json"
     switch_json = output_dir / "site_switch_config.json"
@@ -210,7 +210,7 @@ def generate_ansible_inventory(output_dir):
             ]
         )
 
-    inventory_path = output_dir / "inventory.ini"
+    inventory_path = store_ini_in / "inventory.ini"
     inventory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print(f"Ansible inventory generert: {inventory_path}")
@@ -233,7 +233,7 @@ def main():
     try:
         create_edge_router_configs_main(excel_file)
         create_sw_configs_main(excel_file)
-        generate_ansible_inventory(output_dir)
+        generate_ansible_inventory(output_dir, output_dir / "../../ansible_folder")
     finally:
         os.chdir(org_cwd)
 

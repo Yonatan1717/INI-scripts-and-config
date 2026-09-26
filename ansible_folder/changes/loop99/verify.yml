@@ -1,0 +1,25 @@
+---
+- name: Verify Loopback99 deployment
+  hosts: cisco
+  gather_facts: false
+
+  tasks:
+    - name: Verify device is reachable
+      cisco.ios.ios_facts:
+        gather_subset:
+          - min
+
+    - name: Read Loopback99 configuration
+      cisco.ios.ios_command:
+        commands:
+          - "show running-config interface Loopback99"
+      register: loopback_check
+
+    - name: Verify Loopback99 is correct
+      ansible.builtin.assert:
+        that:
+          - "'interface Loopback99' in loopback_check.stdout[0]"
+          - "'description ANSIBLE-SAFE-CHANGE-TEST' in loopback_check.stdout[0]"
+          - "'ip address 192.0.2.99 255.255.255.255' in loopback_check.stdout[0]"
+        success_msg: "Loopback99 verified on {{ inventory_hostname }}"
+        fail_msg: "Loopback99 verification failed on {{ inventory_hostname }}"

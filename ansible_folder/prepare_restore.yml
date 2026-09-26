@@ -1,0 +1,45 @@
+---
+- name: Prepare rollback
+  hosts: cisco
+  gather_facts: false
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Find pre-change backups
+      ansible.builtin.find:
+        paths: "{{ backup_root }}/{{ inventory_hostname }}/pre_change"
+        patterns: "*.cfg"
+        file_type: file
+        recurse: false
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+      register: backup_files
+
+    - name: Stop if no pre-change backup exists
+      ansible.builtin.fail:
+        msg: "No pre-change backup found for {{ inventory_hostname }}"
+      when: backup_files.matched | int == 0
+
+    - name: Select newest pre-change backup
+      ansible.builtin.set_fact:
+        restore_file: >-
+          {{
+            (
+              backup_files.files
+              | sort(attribute='mtime', reverse=true)
+              | first
+            ).path
+          }}
+
+    - name: Show selected rollback file
+      ansible.builtin.debug:
+        msg: "Rollback {{ inventory_hostname }} using {{ restore_file }}"
+
+    - name: Copy pre-change backup to device flash
+      ansible.netcommon.net_put:
+        src: "{{ restore_file }}"
+        dest: "flash:/ansible-restore.cfg"
+        protocol: scp

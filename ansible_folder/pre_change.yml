@@ -1,0 +1,18 @@
+---
+- name: Pre-change backup
+  hosts: cisco
+  gather_facts: false
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Backup running-config before change
+      ansible.netcommon.cli_backup:
+        dir_path: "{{ backup_root }}/{{ inventory_hostname }}/pre_change"
+        filename: "{{ inventory_hostname }}_{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}.cfg"
+      register: backup_result
+
+    - name: Show pre-change backup path
+      ansible.builtin.debug:
+        var: backup_result.backup_path
