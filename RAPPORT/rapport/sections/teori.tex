@@ -1,131 +1,383 @@
+% Teorikapittel for eksisterende rapport. Bruk med NETworkSTUFF_kilder_rettet.bib.
+% Krever booktabs og float i hoveddokumentet; bibliografien bruker BibLaTeX-format.
+% NSM N-03 (2012), særlig kap. 5.13--5.17, er kontrollert mot vedlagt PDF.
+% Forsvarets kursmateriell var ikke vedlagt og er ikke uavhengig verifisert.
+
 \section{Teori}
 
 \subsection{DHCP snooping}
-DHCP snooping er en sikkerhetsfunksjon som filtrerer DHCP-meldinger på lag 2 og skiller mellom betrodde og ubetrodde porter. Porter mot en legitim DHCP-server eller annen betrodd infrastruktur kan markeres som trusted, mens klientporter normalt er untrusted. DHCP-svar fra ubetrodde porter kan dermed blokkeres. Samtidig bygger svitsjen en bindingstabell som knytter sammen blant annet IP-adresse, MAC-adresse, VLAN og fysisk port. Denne tabellen kan også brukes av andre sikkerhetsfunksjoner som DAI og IPSG \cite{forsvaret_nettverk_rolle1}. 
+
+DHCP snooping er en sikkerhetsfunksjon som filtrerer DHCP-meldinger på lag 2 og skiller mellom betrodde og ubetrodde porter. Porter mot en legitim DHCP-server eller annen betrodd infrastruktur kan markeres som trusted, mens klientporter normalt er untrusted. DHCP-svar fra ubetrodde porter kan dermed blokkeres. Samtidig bygger svitsjen en bindingstabell som knytter sammen blant annet IP-adresse, MAC-adresse, VLAN og fysisk port. Denne tabellen kan også brukes av andre sikkerhetsfunksjoner som DAI og IPSG \cite{forsvaret_nettverk_rolle1}.
 
 \subsubsection{IPSG}
+
 IP Source Guard (IPSG) begrenser IP-trafikk på lag-2-porter ved å kontrollere kildeadressen mot DHCP snooping-bindingstabellen eller manuelt konfigurerte IP-bindinger. Trafikk med en kilde-IP som ikke samsvarer med en gyldig binding kan blokkeres. IPSG reduserer dermed muligheten for IP-spoofing på klientporter og fungerer spesielt godt sammen med DHCP snooping \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{STP}
-Spanning Tree Protocol (STP) brukes for å hindre lag-2-løkker i Ethernet-nettverk. Protokollen beregner en løkkefri topologi og setter redundante veier i en ikke-videresendende tilstand. Selv om nettverket i utgangspunktet er bygget som en trestruktur uten redundante lenker, er STP fortsatt relevant som beskyttelse mot utilsiktede løkker som kan oppstå ved feilkobling eller senere endringer. STP har følgende porttilstander \cite{cisco_stp_3850}:\\[0.1em]
+
+Spanning Tree Protocol (STP) brukes for å hindre lag-2-løkker i Ethernet-nettverk. Protokollen beregner en løkkefri topologi og setter redundante veier i en ikke-videresendende tilstand. Selv om nettverket i utgangspunktet er bygget som en trestruktur uten redundante lenker, er STP fortsatt relevant som beskyttelse mot utilsiktede løkker som kan oppstå ved feilkobling eller senere endringer. Klassisk STP har følgende porttilstander \cite{cisco_stp_3850}:
+
 \begin{table}[H]
+
 \centering
-\caption{STP-porttilstander}
+
+\caption{Porttilstander i klassisk STP}
+
 \label{tab:stp-porttilstander}
+
 \small
+
 \renewcommand{\arraystretch}{1.25}
+
 \begin{tabular}{@{}ll@{}}
+
 \toprule
+
 \parbox[t]{0.22\textwidth}{\textbf{Tilstand}} & \parbox[t]{0.66\textwidth}{\textbf{Beskrivelse}} \\
+
 \midrule
+
 \parbox[t]{0.22\textwidth}{Blocking} & \parbox[t]{0.66\textwidth}{\raggedright Vanlig datatrafikk videresendes ikke, men porten kan fortsatt motta og behandle BPDUs.} \\
+
 \addlinespace
+
 \parbox[t]{0.22\textwidth}{Listening} & \parbox[t]{0.66\textwidth}{\raggedright Porten deltar i STP-beregningen og behandler BPDUs, men lærer ikke MAC-adresser og videresender ikke vanlig datatrafikk.} \\
+
 \addlinespace
+
 \parbox[t]{0.22\textwidth}{Learning} & \parbox[t]{0.66\textwidth}{\raggedright Porten begynner å lære MAC-adresser, men videresender fortsatt ikke vanlig datatrafikk.} \\
+
 \addlinespace
+
 \parbox[t]{0.22\textwidth}{Forwarding} & \parbox[t]{0.66\textwidth}{\raggedright Porten lærer MAC-adresser og videresender vanlig datatrafikk.} \\
+
 \addlinespace
+
 \parbox[t]{0.22\textwidth}{Disabled} & \parbox[t]{0.66\textwidth}{\raggedright Porten er deaktivert og deltar ikke i STP.} \\
+
 \bottomrule
+
 \end{tabular}
+
 \end{table}
-\noindent 
+
+\noindent
+
 Ved klassisk STP brukes normalt 15 sekunder i listening og 15 sekunder i learning. Ved enkelte topologiendringer kan Max Age i tillegg påvirke konvergenstiden, slik at overgangen i verste fall kan ta rundt 50 sekunder. Raskere STP-varianter som RSTP bruker en annen tilstandsmodell og kan konvergere betydelig raskere \cite{forsvaret_nettverk_rolle1,cisco_stp_3850}.
 
 \subsubsection{BPDU Guard}
-BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, kan porten settes i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{forsvaret_nettverk_rolle1}.
+
+BPDU Guard beskytter edge-/PortFast-porter mot uventede BPDUs. Dersom en BPDU mottas på en port der BPDU Guard er aktivert, settes porten normalt i error-disabled-tilstand. Dette reduserer risikoen for at en klientport utilsiktet brukes til å koble inn en ny svitsj og påvirke spanning-tree-topologien \cite{forsvaret_nettverk_rolle1}.
+
 \subsection{Root Guard og Loop Guard}
+
 Root Guard og Loop Guard er mekanismer som beskytter spanning-tree-topologien mot uventede endringer. Root Guard hindrer at en designated port endrer rolle som følge av mottak av superior BPDUs, og setter porten i root-inconsistent-tilstand dersom dette skjer. Loop Guard beskytter root- og alternate-porter ved å hindre at de går over til forwarding dersom forventede BPDUs slutter å bli mottatt, noe som kan oppstå ved for eksempel en enveis linkfeil og føre til en nettverksloop \cite{forsvaret_nettverk_rolle1, nsm_n03}.
+
 \subsubsection{PortFast}
+
 PortFast gjør at en edge-port kan gå direkte til forwarding i stedet for å vente gjennom de vanlige STP-tilstandene. Dette er egnet på porter mot enkeltstående endeenheter som klienter og servere, men ikke på porter som forventes å kobles til andre svitsjer \cite{forsvaret_nettverk_rolle1}.
+
 \subsubsection{Port Security}
-Port Security begrenser hvilke eller hvor mange MAC-adresser som kan brukes på en svitsjeport. Ved brudd kan ukjent trafikk blant annet droppes, logges eller føre til at porten settes i error-disabled-tilstand, avhengig av valgt violation-modus. Port Security gir dermed en ekstra kontroll på klientporter, men er ikke en erstatning for sterk klientautentisering \cite{forsvaret_nettverk_rolle1}.
+
+Port Security begrenser hvilke eller hvor mange MAC-adresser som kan brukes på en svitsjeport. Ved brudd droppes trafikk fra ikke-tillatte kilde-MAC-adresser. Avhengig av valgt violation-modus kan bruddet i tillegg registreres og varsles, eller porten settes i error-disabled-tilstand. Port Security gir dermed en ekstra kontroll på klientporter, men er ikke en erstatning for sterk klientautentisering \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{DAI}
+
 Dynamic ARP Inspection (DAI) beskytter mot ugyldige eller forfalskede ARP-meldinger. På ubetrodde porter valideres ARP-trafikk mot kjente IP- og MAC-bindinger, vanligvis fra DHCP snooping-bindingstabellen. ARP-meldinger som ikke samsvarer med en gyldig binding kan droppes. På betrodde porter videresendes ARP uten den samme kontrollen. I miljøer med statiske adresser kan ARP ACL-er brukes som et alternativ til dynamiske DHCP-bindinger \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{Sikkerhetsovervåkning og logging}
+
 Sikkerhetsovervåkning og logging brukes for å oppdage, analysere og følge opp hendelser i et nettverk. Ved å samle logger og nettverkshendelser sentralt blir det enklere å korrelere aktivitet fra flere enheter, oppdage avvik og gjennomføre feilsøking eller hendelseshåndtering \cite{nsm_n03}.
 
 \subsubsection{Suricata og Security Onion}
+
 Suricata er en nettverksbasert IDS/IPS-motor som analyserer trafikk mot regler og signaturer og kan generere varsler og strukturerte hendelser, blant annet i EVE JSON-format. Security Onion er en plattform for sikkerhetsovervåkning som blant annet kan bruke Suricata til signaturbasert nettverksdeteksjon og kombinere dette med logging, nettverksmetadata og analyseverktøy. Ved passiv overvåkning brukes normalt et eget sniffing-interface som mottar kopiert trafikk fra for eksempel en TAP- eller SPAN-port \cite{suricata_eve,security_onion_intro}.
 
 \subsubsection{Syslog}
+
 Syslog brukes ofte for logging fra nettverksenheter til en sentral loggtjeneste. Sentral innsamling gjør det enklere å overvåke og korrelere hendelser fra flere systemer. NSM anbefaler at nettverksenheter sender logger til dedikerte loggverter, at meldingene tidsstemples og at loggingen omfatter blant annet systemstatus og konfigurasjonsaktivitet \cite{nsm_n03}.
 
 \subsubsection{SPAN, RSPAN og ERSPAN}
-SPAN (Switched Port Analyzer) speiler valgt trafikk fra porter eller VLAN til en lokal monitorport, slik at trafikken kan analyseres av en sensor uten å ligge direkte i trafikkflyten \cite{cisco_span_rspan_3850}.\\[1em]
-RSPAN (Remote Switched Port Analyzer) utvider dette ved å transportere speilet trafikk gjennom et eget RSPAN-VLAN over lag-2-trunker til en destination-port på en annen svitsj \cite{cisco_span_rspan_3850}.\\[1em]
+
+SPAN (Switched Port Analyzer) speiler valgt trafikk fra porter eller VLAN til en lokal monitorport, slik at trafikken kan analyseres av en sensor uten å ligge direkte i trafikkflyten \cite{cisco_span_rspan_3850}.
+
+RSPAN (Remote Switched Port Analyzer) utvider dette ved å transportere speilet trafikk gjennom et eget RSPAN-VLAN over lag-2-trunker til en destination-port på en annen svitsj \cite{cisco_span_rspan_3850}.
+
 ERSPAN (Encapsulated Remote Switched Port Analyzer) kapsler speilet trafikk inn i GRE og transporterer den over et rutet IP-nettverk til en ERSPAN-mottaker. Dette gjør det mulig å samle speilet trafikk fra andre lokasjoner uten å strekke et eget lag-2-RSPAN-VLAN mellom lokasjonene.\cite{cisco_erspan_3850}
 
+\subsubsection{NTP}
+
+Å ha sentral logging og overvåkning er essensielt, men gir begrenset verdi dersom tidspunktene for hendelsene ikke er korrekt synkronisert og derfor er vanskelige å korrelere på tvers av enheter. Network Time Protocol (NTP) løser nettopp det problemet ved å synkronisere klokker mellom systemer i et IP-nettverk. Korrekt og konsistent tid er spesielt viktig for administrasjon, feilsøking, hendelseshåndtering og korrelasjon av logger og sikkerhetshendelser \cite{nsm_n03}.
+
 \subsection{EtherChannel}
-EtherChannel kombinerer flere fysiske Ethernet-lenker til en logisk forbindelse. Dette kan gi høyere samlet kapasitet og redundans dersom en medlemslenke faller ut. Trafikk fordeles mellom medlemslenkene ved hjelp av en lastfordelingsmekanisme. EtherChannel kan etableres med blant annet PAgP (Port Aggregation Protocol) eller LACP (Link Aggregation Control Protocol). PAgP er Cisco-proprietær, mens LACP er standardisert og kan brukes mellom kompatibelt utstyr fra ulike leverandører \cite{forsvaret_nettverk_rolle1}.
+
+EtherChannel kombinerer flere fysiske Ethernet-lenker til en logisk forbindelse. Dette kan gi høyere samlet kapasitet og redundans dersom en medlemslenke faller ut. Trafikk fordeles mellom medlemslenkene ved hjelp av en lastfordelingsmekanisme. En enkelt trafikkstrøm bruker normalt én medlemslenke og får derfor ikke automatisk tilgang til hele den samlede kapasiteten. EtherChannel kan etableres med blant annet PAgP (Port Aggregation Protocol) eller LACP (Link Aggregation Control Protocol). PAgP er Cisco-proprietær, mens LACP er standardisert og kan brukes mellom kompatibelt utstyr fra ulike leverandører \cite{forsvaret_nettverk_rolle1}.
 
 \subsection{SSH}
+
 Secure Shell (SSH) brukes til kryptert fjernadministrasjon av nettverksenheter. Dette gjør SSH til et sikrere alternativ til Telnet, som sender trafikken ukryptert. Ved fjernadministrasjon anbefales det derfor å deaktivere Telnet og benytte SSH \cite{forsvaret_nettverk_rolle1}.
 
-\subsection{NTP}
-Network Time Protocol (NTP) brukes til å synkronisere klokker mellom systemer i et IP-nettverk. Korrekt og konsistent tid er spesielt viktig for administrasjon, feilsøking, hendelseshåndtering og korrelasjon av logger og sikkerhetshendelser \cite{nsm_n03}.
-
 \subsection{Tunnellering og VRF-Lite}
+
 \subsubsection{VRF-Lite}
+
 Virtual Routing and Forwarding (VRF) gjør det mulig å opprettholde flere separate rutingtabeller på samme fysiske ruter eller lag-3-svitsj. VRF-Lite bruker denne separasjonen lokalt uten at MPLS er nødvendig på selve enheten. Trafikk i forskjellige VRF-er behandles derfor som separate logiske rutingdomener selv om de deler fysisk maskinvare \cite{forsvaret_nettverk_rolle1}.
 
 \subsubsection{GRE}
+
 Generic Routing Encapsulation (GRE) kapsler inn en nettverkspakke i en ny GRE/IP-pakke slik at trafikk kan transporteres gjennom et IP-nettverk. GRE gir fleksibel tunnellering, men gir ikke i seg selv konfidensialitet eller kryptografisk beskyttelse. Derfor kombineres GRE ofte med IPsec når tunnelen må beskyttes. GRE er en sentral del av DMVPN \cite{rfc2784,cisco_dmvpn_current}.
 
 \subsubsection{DMVPN}
+
 Dynamic Multipoint Virtual Private Network (DMVPN) er en Cisco-arkitektur som kombinerer multipoint GRE (mGRE), NHRP og ruting for å opprette dynamiske forbindelser mellom hub- og spoke-rutere. IPsec kan i tillegg brukes for å beskytte trafikken kryptografisk. NHRP brukes blant annet til å knytte tunneladresser til underliggende NBMA-adresser og til å muliggjøre dynamiske spoke-to-spoke-forbindelser i fase 2 og 3. Faseforskjellene er oppsummert i tabell \ref{tab:dmvpn-faser} \cite{cisco_dmvpn_current, dmvpn_phase_3}.
 
 \begin{table}[H]
+
 \centering
+
 \caption{DMVPN-faser}
+
 \label{tab:dmvpn-faser}
+
 \small
+
 \renewcommand{\arraystretch}{1.25}
+
 \begin{tabular}{@{}lll@{}}
+
 \toprule
+
 \parbox[t]{0.16\textwidth}{\textbf{Fase}} & \parbox[t]{0.34\textwidth}{\textbf{Oppbygning}} & \parbox[t]{0.34\textwidth}{\textbf{Trafikkflyt}} \\
+
 \midrule
+
 \parbox[t]{0.16\textwidth}{Fase 1} & \parbox[t]{0.34\textwidth}{\raggedright Hub bruker mGRE, mens spoke normalt bruker punkt-til-punkt GRE mot hub.} & \parbox[t]{0.34\textwidth}{\raggedright Spoke-to-spoke-trafikk går via hub. Direkte dynamiske spoke-to-spoke-tunneler støttes ikke.} \\
+
 \addlinespace
+
 \parbox[t]{0.16\textwidth}{Fase 2} & \parbox[t]{0.34\textwidth}{\raggedright Hub og spoke bruker mGRE. NHRP kan løse en remote spoke sin tunneladresse til NBMA-adressen.} & \parbox[t]{0.34\textwidth}{\raggedright Spoke kan etablere en direkte tunnel til en annen spoke. Ruting må bevare remote spoke som neste hopp for å muliggjøre dette.} \\
+
 \addlinespace
+
 \parbox[t]{0.16\textwidth}{Fase 3} & \parbox[t]{0.34\textwidth}{\raggedright Hub bruker NHRP Redirect og spoke bruker NHRP Shortcut. Hub kan fortsatt være rutingens neste hopp og kan bruke summering.} & \parbox[t]{0.34\textwidth}{\raggedright Etter redirect/shortcut kan datatrafikken optimaliseres til en direkte spoke-to-spoke-forbindelse.} \\
+
 \bottomrule
+
 \end{tabular}
+
 \end{table}
 
-\subsection{IPsec og IKEv2}
-IPsec (Internet Protocol Security) er en arkitektur for å beskytte IP-trafikk og kan tilby blant annet konfidensialitet, integritet, autentisering av datakilde og tilgangskontroll. IPsec kan brukes i transportmodus, der den opprinnelige IP-headeren beholdes, eller tunnelmodus, der hele den opprinnelige IP-pakken kapsles inn i en ny IP-pakke \cite{rfc4301}.\\[1em]
-I DMVPN brukes IPsec ofte som tunnel protection rundt GRE-trafikken. Transportmodus er vanlig i denne kombinasjonen fordi GRE allerede har kapslet inn den opprinnelige trafikken. IPsec tilfører da kryptografisk beskyttelse av GRE-trafikken uten å endre DMVPNs dynamiske NHRP-funksjonalitet \cite{cisco_dmvpn_ipsec_transport}.\\[1em]
-Prosjektet benytter IKEv2 for å etablere og vedlikeholde sikkerhetsforbindelser (Security Associations, SAs) og kryptografiske nøkler for IPsec. IKEv2 beskrives ikke som IKE ``Phase 1'' og ``Phase 2'' slik IKEv1 ofte gjør. De sentrale IKEv2-utvekslingene er vist i tabell \ref{tab:ikev2-utvekslinger} \cite{rfc7296}.
+\subsection{VLAN}
+
+Virtual Local Area Network (VLAN) er en metode for å segmentere et fysisk nettverk i flere logiske nettverk. Hvert VLAN fungerer som et separat broadcast-domene, noe som betyr at vanlig lag-2-svitsjing ikke videresender trafikk mellom forskjellige VLAN. Kommunikasjon mellom VLAN krever ruting via en ruter eller en lag-3-svitsj. VLAN alene bestemmer ikke hvilke rutede forbindelser som skal tillates; dette må styres med for eksempel ACL-er eller brannmurregler.
+
+\subsection{SNMP}
+
+Simple Network Management Protocol (SNMP) er en protokoll for overvåkning og administrasjon av nettverksenheter. SNMP gjør det mulig å hente informasjon om enhetens status, konfigurasjon og ytelse, samt å motta varsler om hendelser.
+
+Protokollen benytter en manager--agent-modell, der nettverksenhetene kjører SNMP-agenter og administrasjonssystemet fungerer som SNMP-manager. Manageren kan hente informasjon fra agentene, og agentene kan sende varsler som traps eller informs. SNMPv3 støtter autentisering og kryptering, men begge mekanismene brukes først når sikkerhetsnivået er satt til \texttt{authPriv}. SNMPv3 alene innebærer derfor ikke at kommunikasjonen er kryptert. Sikkerhetsnivåene er nærmere beskrevet i Ciscos SNMP-veiledning \cite{cisco_snmp_security}.
+
+NSMs N-03 fra 2012 anbefaler i kapittel 5.14 at SNMP deaktiveres. Dersom SNMP likevel er nødvendig, angir dokumentet punktene i tabell \ref{tab:snmp-krav}. Tabellen gjengir disse i norsk oversettelse, med skillet mellom «skal» og «bør» bevart. Henvisningen gjelder denne utgaven av veiledningen og er ikke en påstand om dagens generelle NSM-krav \cite{nsm_n03}.
 
 \begin{table}[H]
+
 \centering
-\caption{Sentrale IKEv2-utvekslinger}
-\label{tab:ikev2-utvekslinger}
+
+\caption{SNMP-føringer i NSM N-03 (2012), kapittel 5.14}
+
+\label{tab:snmp-krav}
+
 \small
+
 \renewcommand{\arraystretch}{1.25}
-\begin{tabular}{@{}lll@{}}
+
+\begin{tabular}{@{}ll@{}}
+
 \toprule
-\parbox[t]{0.22\textwidth}{\textbf{Utveksling}} & \parbox[t]{0.31\textwidth}{\textbf{Formål}} & \parbox[t]{0.31\textwidth}{\textbf{Resultat}} \\
+
+\parbox[t]{0.1\textwidth}{\textbf{Nr.}} & \parbox[t]{0.7\textwidth}{\textbf{Føring}} \\
+
 \midrule
-\parbox[t]{0.22\textwidth}{\footnotesize\texttt{IKE\_SA\_INIT}} & \parbox[t]{0.31\textwidth}{\raggedright Forhandler kryptografiske algoritmer, Diffie-Hellman-parametere og nonces.} & \parbox[t]{0.31\textwidth}{\raggedright Partene etablerer felles nøkkelmateriale som brukes videre i IKE-forbindelsen.} \\
+
+\parbox[t]{0.1\textwidth}{1} & \parbox[t]{0.7\textwidth}{\raggedright Den nyeste versjonen av SNMP skal implementeres.} \\
+
 \addlinespace
-\parbox[t]{0.22\textwidth}{\footnotesize\texttt{IKE\_AUTH}} & \parbox[t]{0.31\textwidth}{\raggedright Autentiserer partene og forhandler trafikkselektorer og den første Child SA.} & \parbox[t]{0.31\textwidth}{\raggedright IKE SA og den første IPsec Child SA blir etablert.} \\
+
+\parbox[t]{0.1\textwidth}{2} & \parbox[t]{0.7\textwidth}{\raggedright All SNMP-tilgang skal filtreres med ACL-er og begrenses til administrasjonssystemer eller autoriserte soner.} \\
+
 \addlinespace
-\parbox[t]{0.22\textwidth}{\footnotesize\texttt{CREATE\_CHILD\_SA}} & \parbox[t]{0.31\textwidth}{\raggedright Oppretter ytterligere Child SAs eller rekeyer eksisterende IKE/Child SAs.} & \parbox[t]{0.31\textwidth}{\raggedright Nye eller fornyede sikkerhetsforbindelser etableres uten å starte hele IKE-forhandlingen på nytt.} \\
+
+\parbox[t]{0.1\textwidth}{3} & \parbox[t]{0.7\textwidth}{\raggedright Kun lesetilgang bør tillates.} \\
+
+\addlinespace
+
+\parbox[t]{0.1\textwidth}{4} & \parbox[t]{0.7\textwidth}{\raggedright Community strings skal genereres tilfeldig eller i det minste være vanskelige å gjette.} \\
+
+\addlinespace
+
+\parbox[t]{0.1\textwidth}{5} & \parbox[t]{0.7\textwidth}{\raggedright Passordstyrken skal være i samsvar med NSMs passordpolicy.} \\
+
+\addlinespace
+
+\parbox[t]{0.1\textwidth}{6} & \parbox[t]{0.7\textwidth}{\raggedright SNMP skal autentisere og kryptere pakker.} \\
+
+\addlinespace
+
+\addlinespace
+
 \bottomrule
+
 \end{tabular}
+
+\end{table}
+
+Punktet om community strings gjelder SNMPv1/v2c. I prosjektets brukerbaserte SNMPv3-oppsett brukes i stedet brukernavn og nøkler for autentisering og kryptering. Sikkerhetsnivået \texttt{authPriv} gir både autentisering og kryptering \cite{cisco_snmp_security}.
+
+\subsection{IPsec og IKEv2}
+
+IPsec (Internet Protocol Security) er en arkitektur for å beskytte IP-trafikk og kan tilby blant annet konfidensialitet, integritet, autentisering av datakilde og tilgangskontroll. IPsec kan brukes i transportmodus, der den opprinnelige IP-headeren beholdes, eller tunnelmodus, der hele den opprinnelige IP-pakken kapsles inn i en ny IP-pakke \cite{rfc4301}.
+
+I DMVPN brukes IPsec ofte som tunnel protection rundt GRE-trafikken. Transportmodus er vanlig i denne kombinasjonen fordi GRE allerede har kapslet inn den opprinnelige trafikken. IPsec tilfører da kryptografisk beskyttelse av GRE-trafikken uten å endre DMVPNs dynamiske NHRP-funksjonalitet \cite{cisco_dmvpn_ipsec_transport}.
+
+Prosjektet benytter IKEv2 for å etablere og vedlikeholde sikkerhetsforbindelser (Security Associations, SAs) og kryptografiske nøkler for IPsec. IKEv2 beskrives ikke som IKE \texttt{Phase 1} og \texttt{Phase 2} slik IKEv1 ofte gjør. De sentrale IKEv2-utvekslingene er vist i tabell \ref{tab:ikev2-utvekslinger} \cite{rfc7296}.
+
+\begin{table}[H]
+
+\centering
+
+\caption{Sentrale IKEv2-utvekslinger}
+
+\label{tab:ikev2-utvekslinger}
+
+\small
+
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{@{}lll@{}}
+
+\toprule
+
+\parbox[t]{0.22\textwidth}{\textbf{Utveksling}} & \parbox[t]{0.31\textwidth}{\textbf{Formål}} & \parbox[t]{0.31\textwidth}{\textbf{Resultat}} \\
+
+\midrule
+
+\parbox[t]{0.22\textwidth}{\footnotesize\texttt{IKE\_SA\_INIT}} & \parbox[t]{0.31\textwidth}{\raggedright Forhandler kryptografiske algoritmer og utveksler Diffie-Hellman-verdier og nonces.} & \parbox[t]{0.31\textwidth}{\raggedright Partene etablerer felles nøkkelmateriale som brukes videre i IKE-forbindelsen.} \\
+
+\addlinespace
+
+\parbox[t]{0.22\textwidth}{\footnotesize\texttt{IKE\_AUTH}} & \parbox[t]{0.31\textwidth}{\raggedright Autentiserer partene og forhandler trafikkselektorer og den første Child SA.} & \parbox[t]{0.31\textwidth}{\raggedright IKE SA autentiseres, og den første IPsec Child SA etableres.} \\
+
+\addlinespace
+
+\parbox[t]{0.22\textwidth}{\footnotesize\texttt{CREATE\_}\newline\texttt{CHILD\_SA}} & \parbox[t]{0.31\textwidth}{\raggedright Oppretter ytterligere Child SAs eller rekeyer eksisterende IKE/Child SAs.} & \parbox[t]{0.31\textwidth}{\raggedright Nye eller fornyede sikkerhetsforbindelser etableres uten å starte hele IKE-forhandlingen på nytt.} \\
+
+\bottomrule
+
+\end{tabular}
+
 \end{table}
 
 \subsection{ACL}
+
 Access Control Lists (ACL-er) brukes til å filtrere trafikk etter definerte regler. Avhengig av ACL-type kan kriteriene blant annet være kilde- og destinasjons-IP, protokoll og transportlagsport. ACL-er kan brukes på rutere og lag-3-svitsjer for å begrense hvilke trafikkstrømmer som får passere mellom nett eller sikkerhetssoner. Regler behandles i rekkefølge, og trafikk som ikke eksplisitt tillates vil normalt treffes av en implisitt deny på slutten av ACL-en \cite{forsvaret_nettverk_rolle1}
 
 \subsection{PAT}
+
 Port Address Translation (PAT), også kalt NAT overload, gjør det mulig for flere interne enheter å dele en global IPv4-adresse. Oversettelsen skiller samtidige forbindelser ved hjelp av transportlagsidentifikatorer som portnumre, slik at svartrafikk kan knyttes til riktig intern klient. PAT reduserer behovet for globale IPv4-adresser, men er i seg selv ikke en erstatning for en brannmur eller eksplisitt tilgangskontroll \cite{cisco_pat}.
 
 \subsection{QoS}
-Quality of Service (QoS) refererer til mekanismer som klassifiserer og prioriterer ulike typer nettverkstrafikk for å sikre ønsket ytelse. Dette kan for eksempel innebære at tale- og videotrafikk prioriteres foran mindre tidskritisk trafikk, som filoverføringer. QoS kan implementeres ved hjelp av blant annet trafikkmerking, køhåndtering og båndbreddekontroll, og er spesielt viktig i nettverk med begrenset kapasitet eller høy trafikkbelastning \cite{cisco_qos}.
+
+Quality of Service (QoS) refererer til mekanismer som klassifiserer og prioriterer ulike typer nettverkstrafikk for å bidra til ønsket ytelse. Dette kan for eksempel innebære at tale- og videotrafikk prioriteres foran mindre tidskritisk trafikk, som filoverføringer. QoS kan implementeres ved hjelp av blant annet trafikkmerking, køhåndtering og båndbreddekontroll, og er spesielt viktig i nettverk med begrenset kapasitet eller høy trafikkbelastning \cite{cisco_qos}.
+
+\subsection{AAA-tjenester}
+
+AAA står for Authentication, Authorization and Accounting og brukes til å kontrollere tilgang til nettverksressurser, tildele rettigheter og loggføre brukeraktivitet. Tabellen under gir en oversikt over de tre hovedkomponentene i AAA-tjenester.
+
+
+\begin{table}[H]
+
+\centering
+
+\caption{Hovedkomponenter i AAA-tjenester}
+
+\label{tab:aaa-komponenter}
+
+\small
+
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{@{}ll@{}}
+
+\toprule
+
+\parbox[t]{0.2\textwidth}{\textbf{Komponent}} & \parbox[t]{0.6\textwidth}{\textbf{Beskrivelse}} \\
+
+\midrule
+
+\parbox[t]{0.2\textwidth}{\footnotesize\textbf{Autentisering}} & \parbox[t]{0.6\textwidth}{\raggedright Bekrefter identiteten til brukere eller enheter som prøver å få tilgang til nettverksressurser.} \\
+
+\addlinespace
+
+\parbox[t]{0.2\textwidth}{\footnotesize\textbf{Autorisasjon}} & \parbox[t]{0.6\textwidth}{\raggedright Bestemmer hvilke ressurser og handlinger en autentisert bruker eller enhet har tilgang til.} \\
+
+\addlinespace
+
+\parbox[t]{0.2\textwidth}{\footnotesize\textbf{Accounting}} & \parbox[t]{0.6\textwidth}{\raggedright Registrerer blant annet sesjoner, ressursbruk og, der dette er konfigurert, utførte kommandoer. Dette gir sporbarhet og grunnlag for revisjon.} \\
+
+\bottomrule
+
+\end{tabular}
+
+\end{table}
+
+\subsubsection{TACACS+}
+
+Terminal Access Controller Access-Control System Plus (TACACS+) er en protokoll for AAA som ofte brukes til administrasjon av nettverksutstyr. Den skiller autentisering, autorisasjon og accounting i separate prosesser og kan blant annet brukes til å kontrollere hvilke administrasjonskommandoer en bruker får utføre. Tradisjonell TACACS+ benytter TCP-port 49 og en mekanisme basert på en delt hemmelighet som skjuler meldingskroppen, mens headeren sendes ukryptert. RFC 8907 omtaler denne mekanismen som obfuskering og understreker at den ikke bør betraktes som sterk kryptografisk beskyttelse. TACACS+ bør derfor brukes over et beskyttet administrasjonsnett eller med egnet transportbeskyttelse \cite{rfc8907}.
+
+\subsubsection{RADIUS}
+
+Remote Authentication Dial-In User Service (RADIUS) er en protokoll for AAA som ofte brukes til nettverkstilgang, blant annet sammen med IEEE 802.1X. NAS sender en Access-Request. Serveren svarer med Access-Accept eller Access-Reject, eventuelt etter flere Access-Challenge-meldinger. Svaret kan også inneholde attributter som bestemmer tilgangen. Accounting håndteres separat. Tradisjonell RADIUS benytter normalt UDP-port 1812 for autentisering og autorisasjon og UDP-port 1813 for accounting \cite{rfc2865,rfc2866}.
+
+Tradisjonell RADIUS over UDP krypterer ikke hele meldingen. Ved bruk av attributtet \texttt{User-Password} skjules passordet med en mekanisme basert på MD5 og en delt hemmelighet. Ved 802.1X frakter RADIUS normalt EAP-meldinger, og beskyttelsen av selve autentiseringen avhenger også av valgt EAP-metode. PEAP oppretter for eksempel en TLS-tunnel mellom supplicanten og autentiseringsserveren som beskytter den indre autentiseringen. Dette krypterer ikke automatisk alle øvrige RADIUS-attributter. Sikkerheten må derfor vurderes ut fra autentiseringsmetode, transportbeskyttelse og konfigurasjon, og ikke bare ut fra en generell sammenligning med TACACS+ \cite{rfc2865,rfc3579,ms_peap}.
+
+\subsection{802.1X}
+
+IEEE 802.1X er en standard for portbasert tilgangskontroll i kablede og trådløse lokalnett. Den brukes til å autentisere brukere og/eller enheter før vanlig datatrafikk tillates gjennom den kontrollerte porten. Autentiseringstrafikk via EAP over LAN (EAPOL) kan fortsatt utveksles mens porten er uautorisert. Tilgangen etter autentisering bestemmes av konfigurerte autorisasjonsregler \cite{rfc3580,cisco_wired_dot1x}.
+
+I et vanlig oppsett kommuniserer supplicanten med authenticatoren ved hjelp av EAPOL. Authenticatoren videresender EAP-meldinger til autentiseringsserveren i RADIUS-meldinger og håndhever serverens autorisasjonsbeslutning. Access-svitsjen har da rollen som både authenticator, Network Access Server (NAS) og RADIUS-klient. Endepunktet er supplicant, ikke RADIUS-klient. Hovedkomponentene er vist i tabell \ref{tab:8021x-komponenter} \cite{rfc3580,cisco_wired_dot1x}.
+
+\begin{table}[H]
+
+\centering
+
+\caption{Sentrale 802.1X-komponenter}
+
+\label{tab:8021x-komponenter}
+
+\small
+
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{@{}ll@{}}
+
+\toprule
+
+\parbox[t]{0.2\textwidth}{\textbf{Komponent}} & \parbox[t]{0.6\textwidth}{\textbf{Beskrivelse}} \\
+
+\midrule
+
+\parbox[t]{0.2\textwidth}{\textbf{Supplicant}} & \parbox[t]{0.6\textwidth}{\raggedright Rollen på endepunktet som ber om nettverkstilgang og deltar i EAP-autentiseringen. Rollen ivaretas av klientprogramvare, for eksempel operativsystemets innebygde 802.1X-klient. Kommunikasjonen med authenticatoren skjer via EAPOL.} \\
+
+\addlinespace
+
+\parbox[t]{0.2\textwidth}{\textbf{Authenticator}} & \parbox[t]{0.6\textwidth}{\raggedright En svitsj eller et trådløst tilgangspunkt som kontrollerer nettverkstilgangen. Den formidler normalt autentiseringen til serveren og tillater eller blokkerer vanlig datatrafikk i samsvar med resultatet og lokal policy.} \\
+
+\addlinespace
+
+\parbox[t]{0.2\textwidth}{\textbf{Autentiserings-\newline server}} & \parbox[t]{0.6\textwidth}{\raggedright Serveren som validerer brukerens eller enhetens identitet og sender resultatet, eventuelt med autorisasjonsattributter, til authenticatoren. FreeRADIUS er et eksempel på en server som kan fylle denne rollen.} \\
+
+\bottomrule
+
+\end{tabular}
+
+\end{table}

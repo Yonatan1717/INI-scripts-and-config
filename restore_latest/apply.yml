@@ -1,0 +1,15 @@
+---
+- name: Apply staged backup
+  hosts: cisco
+  gather_facts: false
+
+  tasks:
+    - name: Replace running-config with staged backup
+      cisco.ios.ios_command:
+        commands:
+          - "configure replace flash:/ansible-restore.cfg force"
+
+    - name: Save restored configuration
+      cisco.ios.ios_command:
+        commands:
+          - "write memory"

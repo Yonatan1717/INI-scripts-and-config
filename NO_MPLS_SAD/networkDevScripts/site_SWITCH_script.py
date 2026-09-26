@@ -1267,6 +1267,7 @@ def enable_ssh(md, domain=SSH_DOMAIN, mgmt_network=None, mgmt_wildcard=None, sec
     my_data["config"][_secret_command(f"username {username} privilege 15", password, secret_type)] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
+    my_data["config"]["ip scp server enable"] = []
 
     vty_cfg = ["login authentication default", "exec-timeout 10 0", "transport input ssh"]
     if mgmt_network and mgmt_wildcard:

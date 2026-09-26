@@ -1,193 +1,108 @@
+% Designkapittel. Krever array, longtable, booktabs, float, amsmath,
+% graphicx, xcolor med table-opsjon og caption i hoveddokumentet.
+% Eksisterende figurstier og tabell-/figurlabels er beholdt.
+% K1--K8 erstatter den tidligere nummereringen 1--19.
+\begingroup
+\captionsetup[table]{justification=raggedright,singlelinecheck=false}
 \section{Design}
-Nettverket er bygget med VRF-Lite for logisk segmentering av de ulike tjenestenettene, mens DMVPN Phase 3 benyttes som overlay mellom lokasjonene. Det eksisterende Layer 3-VPN-et levert av det litauiske forsvaret benyttes som underlay og transporterer DMVPN-trafikken mellom lokasjonene. Den eksisterende transportinfrastrukturen krever dermed ingen konfigurasjonsendringer.\\[1em]
-Hver tjenestetype transporteres i et separat logisk segment. Trafikk som krever konfidensialitets- og integritetsbeskyttelse transporteres gjennom IPsec-beskyttede DMVPN-tunneler. Relevant nettverkstrafikk fra spoke-sites speiles ved hjelp av ERSPAN og transporteres til den sentrale overvåkningsløsningen i BNHQ.\\[1em]
-Løsningen er utformet med mål om å redusere sikkerhetsrisiko uten å endre nettverkets nødvendige funksjonalitet eller medføre større nyanskaffelser. Eksisterende Cisco-utstyr og tilgjengelige funksjoner benyttes så langt dette er mulig.
+Designarbeidet tok utgangspunkt i nettverket S6-seksjonen overtok ved HO/TO. Nettverket var flatt, kontrollen over tilkoblede enheter var begrenset, og det manglet både fjernadministrasjon og sentral overvåkning. Den nye løsningen skulle videreføre UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd, men samtidig gi S6 bedre kontroll med administrasjon, overvåkning og gjenoppretting.
+
+Kapitlet beskriver rammebetingelsene og kravene som styrte designet, og forklarer hvorfor de ulike løsningene ble tatt i bruk. Det skilles mellom selve designvalgene, forutsetninger som må være på plass før produksjonssetting, og forhold som må verifiseres gjennom testing. At en mekanisme er inkludert i designet, betyr derfor ikke i seg selv at det tilhørende kravet er oppfylt.
+
+\subsection{Utgangspunkt og rammebetingelser}
+Stabssjefen fastsatte, i samråd med S6, følgende rammebetingelser for rekonfigurasjonen. De styrte designarbeidet og ble brukt som føringer når ulike tekniske alternativer måtte vurderes opp mot hverandre:
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.18}
+\captionsetup{justification=raggedright,singlelinecheck=false}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.08\linewidth} >{\raggedright\arraybackslash}p{0.25\linewidth} >{\raggedright\arraybackslash}p{0.60\linewidth}@{}}
+\caption{Rammebetingelser for rekonfigurasjonen.}\label{tab:rammebetingelser}\\
+\toprule
+\textbf{ID} & \textbf{Rammebetingelse} & \textbf{Beskrivelse} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Rammebetingelse} & \textbf{Beskrivelse} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r}{Fortsetter på neste side}\\
+\endfoot
+\bottomrule
+\endlastfoot
+F1 & Risiko og ressursbruk & Nettverket skal redusere sikkerhetsrisikoen til et akseptabelt nivå, uten at drift og bruk krever mer ressurser enn før rekonfigurasjonen. \\
+\addlinespace
+F2 & Funksjonalitet & Nettverket skal fortsatt gi samme funksjonalitet for brukerne. \\
+\addlinespace
+F3 & Anskaffelser & Løsningen skal ikke kreve større nyanskaffelser av maskinvare, programvare eller lisenser. \\
+\addlinespace
+F4 & Leverandørens forbindelser & Konfigurasjonen til forbindelsene levert av det litauiske forsvaret skal ikke måtte endres. \\
+\addlinespace
+F5 & Dokumentasjon & Nettverket skal dokumenteres for nåværende og fremtidige kontingenter. \\
+\addlinespace
+F6 & Godkjenning & Ingen endringer skal gjøres i produksjonsnettet før S6 har akseptert den operative risikoen ved endringene. \\
+\end{longtable}
+\endgroup
 
 \subsection{Designkrav}
-{\small
+Tabell \ref{tab:designkrav} viser kravene som ble utledet fra svakhetene som kom fram ved HO/TO, sammen med behovet for sikker drift og gjenoppretting. Kravene beskriver hva løsningen skal oppnå, de tekniske og administrative tiltakene er virkemidlene som skal bidra til dette.
+
+Krav som hadde størst betydning for sikkerhet og operativ funksjon fikk prioritet H, mens støttende krav til forvaltning og gjenoppretting fikk prioritet M. Tabellen er sortert med H-kravene først. Prioriteringen følger rammebetingelsene F1--F6. Dersom et krav ikke var dokumentert oppfylt, ble det stående som et uavklart forhold eller som gjenstående risiko.
+
+\begingroup
+\small
 \setlength{\tabcolsep}{4pt}
-\newcommand{\headercenter}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\centering\textbf{#1}}}
-\newcommand{\headerleft}[1]{\parbox[c][1.75\baselineskip][c]{\linewidth}{\raggedright\textbf{#1}}}
-\begin{longtable}{
-    |>{\centering\arraybackslash}p{0.6cm}
-    |>{\raggedright\arraybackslash}p{4.2cm}
-    |>{\centering\arraybackslash}p{0.7cm}
-    |>{\raggedright\arraybackslash}p{3.5cm}
-    |>{\raggedright\arraybackslash}p{4.2cm}|
-}
-\caption{Krav og tilhørende designprinsipper for nettverksløsning.}
-\label{tab:designkrav}\\
-\hline
-\headercenter{ID} &
-\headerleft{Krav} &
-\headercenter{Pri.} &
-\headerleft{Designprinsipp} &
-\headerleft{Begrunnelse / tiltak} \\
-\hline
+\renewcommand{\arraystretch}{1.18}
+\captionsetup{justification=raggedright,singlelinecheck=false}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.055\linewidth} >{\raggedright\arraybackslash}p{0.48\linewidth} >{\raggedright\arraybackslash}p{0.30\linewidth} >{\centering\arraybackslash}p{0.065\linewidth}@{}}
+\caption{Prioriterte designkrav og grunnlaget for dem.}\label{tab:designkrav}\\
+\toprule
+\textbf{ID} & \textbf{Krav} & \textbf{Grunnlag} & \textbf{Pri.} \\
+\midrule
 \endfirsthead
-
-\caption[]{Krav og tilhørende designprinsipper for foreslått nettverksløsning.}\\
-\hline
-\headercenter{ID} &
-\headerleft{Krav} &
-\headercenter{Pri.} &
-\headerleft{Designprinsipp} &
-\headerleft{Begrunnelse / tiltak} \\
-\hline
+\toprule
+\textbf{ID} & \textbf{Krav} & \textbf{Grunnlag} & \textbf{Pri.} \\
+\midrule
 \endhead
-
-\hline
-\multicolumn{5}{r}{\small Fortsetter på neste side} \\
+\midrule
+\multicolumn{4}{r}{Fortsetter på neste side}\\
 \endfoot
-
-\hline
+\bottomrule
 \endlastfoot
-
-1 &
-Nettverket skal segmenteres mellom ulike tjenester og brukergrupper. &
-\cellcolor{red!60}H &
-Kontrollert, sikker, fleksibel. &
-Segmentering begrenser trafikk mellom tjenester og reduserer konsekvensene dersom en klient eller del av nettverket kompromitteres. \\
-\hline
-
-2 &
-Trafikk mellom segmenter skal begrenses til kun nødvendige tjenester. &
-\cellcolor{red!60}H &
-Kontrollert, minimert, sikker. &
-ACL-er basert på en definert trafikkpolicy sikrer at kun forventet og nødvendig trafikk tillates mellom nettverk og tjenester. \\
-\hline
-
-3 &
-Administrasjon av nettverksenheter skal kun være tilgjengelig fra autoriserte administrasjonsnett. &
-\cellcolor{red!60}H &
-Kontrollert, sikker, sporbar. &
-Eget MGMT-nett, SSH og tilgangskontroll reduserer eksponeringen av administrasjonsgrensesnitt og hindrer administrasjon fra ordinære klientnett. \\
-\hline
-
-4 &
-Administrativ tilgang skal autentiseres og administreres sentralt. &
-\cellcolor{orange!60}M &
-Sporbar, kontrollert, håndterbar. &
-Sentral AAA/TACACS+ gjør det mulig å kontrollere hvem som får administrativ tilgang og knytte aktivitet til individuelle brukere. \\
-\hline
-
-5 &
-Nettverket skal beskytte mot uautoriserte eller feilkonfigurerte klienter på lokale nett. &
-\cellcolor{red!60}H &
-Sikker, robust, motstandsdyktig. &
-DHCP Snooping, Dynamic ARP Inspection, IP Source Guard og Port Security reduserer risikoen for blant annet falske DHCP-servere og ARP-spoofing. \\
-\hline
-
-6 &
-Nettverket skal være beskyttet mot uønskede Layer~2-løkker og uautoriserte endringer i STP-topologien. &
-\cellcolor{red!60}H &
-Robust, motstandsdyktig, tilgjengelig. &
-BPDU Guard, Root Guard og Loop Guard reduserer risikoen for at feil eller uautoriserte svitsjer påvirker spanning-tree-topologien og tilgjengeligheten. \\
-\hline
-
-7 &
-Nettverksenheter skal sende logger til et sentralt loggsystem. &
-\cellcolor{orange!60}M &
-Sporbar, overvåkbar, beredskapsklar. &
-Sentral logging gjør det enklere å oppdage hendelser, analysere feil og sammenstille aktivitet på tvers av nettverksenheter. \\
-\hline
-
-8 &
-Systemklokkene på nettverksenhetene skal synkroniseres. &
-\cellcolor{orange!60}M &
-Sporbar, konsistent, håndterbar. &
-Felles tidsgrunnlag gjør det mulig å korrelere logger og hendelser mellom forskjellige enheter ved feilsøking og hendelseshåndtering. \\
-\hline
-
-9 &
-Nettverkstrafikk skal kunne overvåkes sentralt for å oppdage mistenkelig aktivitet. &
-\cellcolor{orange!60}M &
-Overvåkbar, sporbar, sikker. &
-SPAN, RSPAN eller ERSPAN gjør det mulig å sende relevant nettverkstrafikk til en sentral IDS-løsning som Suricata eller mer avanserte overvåkingsverktøy som Security Onion. \\
-\hline
-
-10 &
-Det nye nettverket skal opprettholde dagens funksjonalitet for brukerne. &
-\cellcolor{red!60}H &
-Kapabel, tilgjengelig, kompatibel. &
-Sikkerhetstiltak skal innføres uten at nødvendige tjenester som telefoni, PA-anlegg, arbeidsnett eller velferdsnett mister nødvendig funksjonalitet. \\
-\hline
-
-11 &
-Løsningen skal i størst mulig grad benytte eksisterende maskinvare, programvare og lisenser. &
-\cellcolor{red!60}H &
-Kostnadseffektiv, gjenbrukbar, kompatibel. &
-Gjenbruk av eksisterende Cisco-utstyr og tilgjengelige funksjoner reduserer behovet for nyanskaffelser og gjør løsningen mulig innenfor eksisterende rammer. \\
-\hline
-
-12 &
-Eksisterende forbindelse levert av det litauiske forsvaret skal kunne beholdes uten endringer. &
-\cellcolor{red!60}H &
-Kompatibel, interoperabel, fleksibel. &
-Den nye lokale nettverksarkitekturen må kunne fungere over eksisterende Layer~3-VPN uten å kreve endringer hos ekstern leverandør. \\
-\hline
-
-13 &
-Nye lokasjoner og nettverkstjenester skal kunne etableres med begrenset manuelt konfigurasjonsarbeid. &
-\cellcolor{orange!60}M &
-Skalerbar, automatiserbar, effektiv. &
-Automatisk generering av konfigurasjon fra en standardisert Excel-mal reduserer manuelt arbeid og gjør det enklere å etablere nye sites raskt og konsistent. \\
-\hline
-
-14 &
-Like nettverksenheter skal konfigureres etter en felles sikkerhetsbaseline. &
-\cellcolor{orange!60}M &
-Standardisert, konsistent, vedlikeholdbar. &
-En felles baseline reduserer konfigurasjonsavvik og sikrer at grunnleggende sikkerhetstiltak implementeres likt på tvers av lokasjoner. \\
-\hline
-
-15 &
-Løsningen skal være dokumentert slik at den kan driftes og videreføres av senere kontingenter. &
-\cellcolor{red!60}H &
-Dokumenterbar, forståelig, vedlikeholdbar. &
-Tydelig dokumentasjon av topologi, IP-plan, tjenester og konfigurasjonsprinsipper reduserer personavhengighet og gjør videre drift og utvikling enklere. \\
-\hline
-
-16 &
-Endringer skal kunne testes og valideres før de innføres i produksjonsnettet. &
-\cellcolor{red!60}H &
-Testbar, kontrollert, sikker. &
-Testing i et separat miljø reduserer risikoen for at feilkonfigurasjon eller nye sikkerhetstiltak påvirker operative tjenester. \\
-\hline
-
-17 &
-Nettverket skal ivareta konfidensialiteten til informasjon og tjenester. &
-\cellcolor{red!60}H &
-Konfidensialitet. &
-Segmentering, tilgangskontroll og kryptering med blant annet SSH og IPsec reduserer risikoen for at uvedkommende får tilgang til informasjon eller administrative grensesnitt. \\
-\hline
-
-18 &
-Nettverket skal ivareta integriteten til informasjon og nettverkstrafikk. &
-\cellcolor{red!60}H &
-Integritet. &
-Autentisering og kryptografiske mekanismer bidrar til å beskytte data mot uautoriserte endringer. I tillegg reduserer sikkerhetsfunksjoner som Dynamic ARP Inspection, DHCP Snooping og IP Source Guard risikoen for spoofing og manipulering av lokal nettverkstrafikk. \\
-\hline
-
-19 &
-Nettverket skal ivareta tilgjengeligheten til nødvendige tjenester. &
-\cellcolor{red!60}H &
-Tilgjengelighet. &
-Mekanismer som EtherChannel, STP-beskyttelse og QoS bidrar til å redusere konsekvensene av feil, forhindre nettverksløkker og prioritere kritisk trafikk ved begrenset kapasitet. \\
-\hline
-
+K1 & Tjenester og brukergrupper skal segmenteres etter funksjon og risiko, lokalt og mellom bygg. & Flatt nettverk uten sikkerhetssoner. & H \\
+\addlinespace
+K2 & Kommunikasjon mellom soner og mot Internett skal begrenses til dokumenterte behov. Trafikk med beskyttelsesbehov skal sikres mot innsyn og manipulering under transport. & Ubegrenset kommunikasjon, utsatte kontorklienter og eksternt administrert transportnett. & H \\
+\addlinespace
+K3 & Tilgang via nettverksuttak skal kontrolleres. Uautoriserte og feilkonfigurerte enheter skal begrenses fra å forstyrre tjenestene. & Ubeskyttede uttak og hendelser med private DHCP-servere. & H \\
+\addlinespace
+K4 & Nettverksenheter skal kunne fjernadministreres sikkert av autorisert personell, med sporbar administrativ aktivitet. & Manglende fjernadministrasjon og behov for kontrollert drift. & H \\
+\addlinespace
+K5 & Hendelser og relevant nettverkstrafikk skal kunne samles inn og analyseres sentralt med felles tidsgrunnlag. & Manglende logginnsamling, sikkerhetsovervåkning og synkroniserte klokker. & H \\
+\addlinespace
+K6 & Feil og belastning skal håndteres slik at nødvendige tjenester opprettholder avtalte funksjons- og tilgjengelighetsmål. & Operativ betydning for telefoni, PA-anlegg og Internett. Rammebetingelse F2. & H \\
+\addlinespace
+K7 & Fysisk plassering, bruk og driftsansvar skal redusere risikoen fra ubeskyttede uttak og Internett-klienter i sensitive arbeidsområder. & Uttak utenfor beskyttet område og Internett-klienter i rom med sensitiv aktivitet. & H \\
+\addlinespace
+K8 & Konfigurasjoner skal dokumenteres, kontrolleres og kunne gjenopprettes til en kjent tilstand. & Rammebetingelsene F1 og F5. Behov for stabil drift, gjenoppretting og kontinuitet ved HO/TO. & M \\
 \end{longtable}
-}
+\endgroup
+
+Krav-ID-ene ga sporbarhet mellom behov og designvalg og dannet grunnlaget for verifikasjon. For K6 var tjenestespesifikke akseptkriterier en forutsetning for å vurdere resultatene fra belastnings- og feiltester. Kravoppfyllelse måtte underbygges med dokumenterte resultater.
 
 \subsection{IP-adresseringsplan}
+Adresseplanen gir tjenestenettene en fast og gjenkjennelig struktur på tvers av lokasjoner, og støtter dermed segmenteringen i K1. Samme navngivning og dokumentasjonsmodell brukes overalt for å gjøre drift og overlevering enklere, i tråd med K8 og F5.
+
 \subsubsection{Lokal nettverksplan}
-Tabell \ref{tab:ipplan-site-x} viser adresseplanen for det lokale nettverket på Site X. Adresseplanen er standardisert slik at samme struktur benyttes på alle lokasjoner.\\[1em]
-Nettverket benytter adresseområdet 10.0.0.0/8. Andre oktett identifiserer site, mens tredje oktett identifiserer tjenestenettet. Eksempelvis vil MGMT-nettet på Site 1 benytte 10.1.10.0/24, mens MGMT-nettet på Site 2 benytter 10.2.10.0/24.\\[1em]
-Denne strukturen gjør det enkelt å identifisere både lokasjon og tjeneste direkte fra en IP-adresse, samtidig som samme adresseringsmodell kan gjenbrukes på alle sites.
+Tabell \ref{tab:ipplan-site-x} viser adresseplanen for det lokale nettet på lokasjon X. Den samme strukturen brukes på alle lokasjoner, slik at adresseringen blir forutsigbar og enkel å kjenne igjen.
+
+Det lokale adresseområdet er 10.0.0.0/8. Andre oktett angir lokasjon, mens tredje oktett angir tjenestenett. MGMT-nettet på lokasjon 1 blir derfor 10.1.10.0/24, mens det tilsvarende nettet på lokasjon 2 blir 10.2.10.0/24.
+
+Denne oppbygningen gjør det mulig å lese både lokasjon og tjeneste direkte ut fra IP-adressen, samtidig som samme modell kan gjenbrukes når nye lokasjoner legges til.
 
 \begin{table}[H]
     \centering
-    \caption{IP-adresseplan for det lokale nettverket på Site X.}
+    \caption{IP-adresseplan for det lokale nettverket på lokasjon X.}
     \label{tab:ipplan-site-x}
     \small
     \renewcommand{\arraystretch}{1.3}
@@ -220,23 +135,41 @@ Denne strukturen gjør det enkelt å identifisere både lokasjon og tjeneste dir
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Kolonnen \textbf{Res.} angir hvor mange adresser som reserveres utenfor den dynamiske adressepoolen. Dette er spesielt relevant i MGMT- og MONITORING-nettene, hvor nettverksenheter og overvåkningskomponenter benytter faste adresser.\\[1em]
+Kolonnen \textbf{Res.} angir hvor mange adresser som reserveres utenfor den dynamiske adressepoolen. Dette er spesielt relevant i MGMT- og MONITORING-nettene, hvor nettverksenheter og overvåkningskomponenter benytter faste adresser.
+
 Et /24-nett inneholder 254 brukbare host-adresser. Dersom 40 adresser reserveres, gjenstår:
 \[
     A_{\text{ledige}} = 254 - 40 = 214
 \]
-adresser til øvrig bruk.\\[1em]
-Andre oktett består av åtte bit og benyttes som site-identifikator. Dersom site-ID 0 reserveres, kan modellen benytte site-ID 1--255. Tredje oktett benyttes til å identifisere tjenestenettet og følger den samme nummereringen på alle sites.
+adresser til øvrig bruk.
+
+Andre oktett brukes som lokasjonsidentifikator. Dersom lokasjons-ID 0 reserveres, kan den lokale adresseplanen benytte ID 1--255. I tunnelplanen 172.16.<tjeneste>.X/24 må X derimot ligge mellom 1 og 254, siden .255 er broadcast-adressen. Tredje oktett identifiserer tjenestenettet og følger samme nummerering på alle lokasjoner.
 
 \subsubsection{Loopback- og DMVPN-plan}
-Loopback-adresser benyttes som stabile adresser for administrasjon, ruting og tunnelterminering.\\[1em]
-Hver VRF har en ordinær loopback som representerer VRF-en lokalt. I tillegg benyttes en separat global source-loopback for hvert DMVPN-overlay.\\[1em]
-Egne source-loopbacks gjør at hvert DMVPN-overlay får en unik underlay-kildeadresse. Denne adressen benyttes også som identitet ved matching av remote peers i den tilhørende IKEv2-profilen. Dermed kan de ulike overlayene benytte separate IKEv2- og IPsec-profiler uten at peer-matching overlapper mellom tunnelene.\\[1em]
-Dette gir tydelig separasjon mellom tunnelene og gjør det enklere å feilsøke og administrere de ulike sikkerhetsdomenene.
+Tabellene \ref{tab:loopback-site-x} og \ref{tab:dmvpn-site-x} viser hvordan segmenteringen videreføres mellom lokasjonene, og hvilke overlay som beskyttes med IPsec. Dette knytter adresse- og tunnelplanen direkte til K1 og K2.
+
+Loopback-adresser brukes fordi de gir stabile endepunkter for administrasjon, ruting og tunnelterminering.
+
+Hver VRF har en ordinær loopback som representerer VRF-en lokalt. I tillegg har hvert DMVPN-overlay en egen global kildeloopback.
+
+Egne kildeloopbacker ga hvert DMVPN-overlay en unik
+underlay-kildeadresse. Disse adressene ble brukt i
+\texttt{match identity remote address} i de tilhørende
+IKEv2-profilene. Dette hindret overlapp mellom overlayenes
+adressebaserte matchkriterier og sikret entydig valg av
+IKEv2-profil.
+
+Hvert IPsec-beskyttet overlay fikk en egen IKEv2- og
+IPsec-profil. Dette la til rette for separate
+autentiseringsnøkler og tydeligere skille mellom
+sikkerhetsdomenene. Med uavhengige forhåndsdelte nøkler
+ville kompromittering av nøkkelen til ett overlay ikke
+i seg selv kompromittere autentiseringen i de øvrige.
+Separasjonen forenklet også administrasjon og feilsøking.
 
 \begin{table}[H]
     \centering
-    \caption{Loopback-adresser benyttet på Site X.}
+    \caption{Loopback-adresser benyttet på lokasjon X.}
     \label{tab:loopback-site-x}
     \small
     \renewcommand{\arraystretch}{1.3}
@@ -247,7 +180,7 @@ Dette gir tydelig separasjon mellom tunnelene og gjør det enklere å feilsøke 
         \rowcolor{tablegreen}
         \color{white}\textbf{Tjeneste} &
         \color{white}\textbf{VRF-loopback} &
-        \color{white}\textbf{DMVPN source-loopback} \\
+        \color{white}\textbf{DMVPN kildeloopback} \\
         \midrule
         MGMT       & Loopback10 & Loopback11 \\
         INET       & Loopback20 & Loopback21 \\
@@ -261,7 +194,7 @@ Dette gir tydelig separasjon mellom tunnelene og gjør det enklere å feilsøke 
 
 \begin{table}[H]
     \centering
-    \caption{DMVPN-adresseplan for Site X.}
+    \caption{DMVPN-adresseplan for lokasjon X.}
     \label{tab:dmvpn-site-x}
     \small
     \renewcommand{\arraystretch}{1.3}
@@ -288,19 +221,22 @@ Dette gir tydelig separasjon mellom tunnelene og gjør det enklere å feilsøke 
 \end{table}
 
 \subsubsection{QoS}
-QoS benyttes for å sikre at tjenester med operativ betydning beholder tilstrekkelig kapasitet dersom WAN-forbindelsen blir belastet.\\[1em]
-Trafikken klassifiseres og merkes basert på hvilken VRF den tilhører. Totalt 75~\% av tilgjengelig båndbredde fordeles mellom de definerte trafikkklassene, mens 25~\% beholdes i \texttt{class-default}.\\[1em]
+QoS skal bidra til at viktige tjenester fortsatt får kapasitet når WAN-forbindelsen er belastet, og støtter dermed K6 og F2. Tabell \ref{tab:qos-site-x} viser vektingen mellom trafikkklassene. Vektingen angir ønsket prioritering, men faktisk kapasitet må fortsatt dokumenteres gjennom belastningstester.
+
+Tjenester med størst operativ betydning får derfor en definert minimumsandel av kapasiteten når WAN-forbindelsen er belastet.
+
+Trafikken klassifiseres etter tjenestenett og merkes med DSCP. Til sammen fordeles 75~\% mellom de definerte trafikkklassene. De resterende 25~\% blir ikke eksplisitt reservert til \texttt{class-default} av generatoren.
+
 For en trafikkklasse $i$ beregnes minimum båndbreddeandel som:
 \[
     B_i =
-    \frac{P_i}{\sum P}
-    \cdot 75\%
+    \frac{P_i}{P_t}
+    \cdot 75\%, \quad \text{hvor } P_t = \sum_i P_i
 \]
-der $P_i$ representerer klassens prioriteringsvekt.
-
+Her er $P_i$ klassens prioriteringsvekt, $P_t$ summen av vektene og $B_i$ den beregnede båndbreddeandelen. Generatoren avrunder først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest, ved lik rest prioriteres høyere vekt. Dermed summerer de tildelte andelene til 75 prosent.
 \begin{table}[H]
     \centering
-    \caption{QoS-vekting og båndbreddefordeling for Site X.}
+    \caption{QoS-vekting og båndbreddefordeling for lokasjon X.}
     \label{tab:qos-site-x}
     \small
     \renewcommand{\arraystretch}{1.3}
@@ -311,96 +247,131 @@ der $P_i$ representerer klassens prioriteringsvekt.
         \rowcolor{tablegreen}
         \color{white}\textbf{VRF} &
         \color{white}\textbf{DSCP} &
-        \color{white}\textbf{Vekt} &
-        \color{white}\textbf{Båndbreddeandel} \\
+        \color{white}\textbf{Vekt ($P_i$)} &
+        \color{white}\textbf{Båndbreddeandel ($B_i$)} \\
         \midrule
         MGMT          & AF21 & 5  & 11\% \\
         INET          & AF11 & 2  & 4\%  \\
         UNET          & AF42 & 7  & 16\% \\
         PA            & AF41 & 10 & 22\% \\
         MONITORING    & AF43 & 10 & 22\% \\
-        Class-default & --   & -- & 25\% \\
+        Ufordelt andel & --   & -- & 25\% \\
         \bottomrule
     \end{tabular}
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Prioriteringene er valgt for å sikre at operative tjenester og overvåkning opprettholder tilstrekkelig kapasitet ved belastning. Velferds- og Internettrafikk gis lavere prioritet fordi redusert ytelse i dette nettet har mindre operativ konsekvens.
+Fordelingen favoriserer operative tjenester og overvåkning når forbindelsen er presset. Generatoren bruker VLAN som grunnlag for klassifisering og DSCP for plassering i køklasser. Velferds- og Internett-trafikk får lavere prioritet fordi redusert ytelse der har mindre operativ konsekvens.
 
 \subsection{Fysisk design}
-Det fysiske designet beskriver hvordan rutere, svitsjer, servere og endepunkter er koblet sammen på den enkelte lokasjonen.\\[1em]
-Hvert site består av en site-ruter og én eller flere aksessvitsjer. Svitsjene transporterer de lokale VLAN-ene frem til site-ruteren, som fungerer som Layer 3-grense mellom de ulike tjenestenettene og DMVPN-overlayene.\\[1em]
-Der flere svitsjer benyttes på samme site, kan redundante switch-forbindelser samles i EtherChannel. Dette gir både økt tilgjengelighet og bedre utnyttelse av tilgjengelig kapasitet.
+Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas der det er mulig (K6). Fysisk sikring og kontroll med nettverksuttak må håndteres i tillegg, jf. K7.
+
+Det fysiske designet viser hvordan rutere, svitsjer, servere og endepunkter kobles sammen på hver lokasjon.
+
+Hver lokasjon består av en lokasjonsruter, en distribusjonssvitsj og én eller flere aksessvitsjer. De lokale VLAN-ene transporteres frem til ruteren, som fungerer som lag-3-grense mellom tjenestenettene og DMVPN-overlayene.
+
+Der portkapasiteten tillater det, brukes EtherChannel mellom svitsjene. Det gir redundans dersom én fysisk lenke faller ut og gjør det mulig å utnytte kapasiteten i flere parallelle forbindelser.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/bygg_nettverk.png}
-    \caption{Fysisk oppkobling av enheter i site-bygningsstrukturen.}
+    \caption{Fysisk oppkobling av enheter i lokasjonsstrukturen.}
     \label{fig:physical-design}
 \end{figure}
 
 \subsection{DMVPN Phase 3-arkitektur}
-BNHQ, Site 1, fungerer som DMVPN-hub og NHRP Next Hop Server (NHS). De øvrige lokasjonene fungerer som spokes og registrerer sine DMVPN-adresser mot hubben.\\[1em]
-Arkitekturen har derfor en logisk hub-and-spoke-struktur for etablering, registrering og dynamisk ruting. Dataplanet er imidlertid ikke begrenset til at all spoke-to-spoke-trafikk må gå gjennom hubben.\\[1em]
-DMVPN Phase 3 benytter NHRP Redirect på huben og NHRP Shortcut på spoke-routerne. Når to spoke-sites kommuniserer, kan den første trafikken gå via hubben. Huben kan deretter informere avsenderen om at det finnes en mer direkte next-hop. Spoke-routerne kan da etablere en dynamisk direkte forbindelse mellom seg.\\[1em]
-Nettverket fungerer dermed som hub-and-spoke i kontrollplanet, mens dataplanet ved behov kan utvikle seg til en dynamisk partial-mesh. Dette reduserer unødvendig trafikk (og økt sjanse for flaskehalser) gjennom BNHQ og gjør arkitekturen mer skalerbar når flere sites etableres.
+Figur \ref{fig:logisk_arkitektur_dmvpn} viser hvordan tjenestene og segmenteringen videreføres mellom bygg uten å kreve endringer i leverandørens transportnett. Arkitekturen ivaretar dermed F2, K1 og rammebetingelsen i F4.
+
+BNHQ på lokasjon 1 fungerer som DMVPN-hub og NHRP Next Hop Server (NHS). De øvrige lokasjonene er spokes og registrerer seg mot hubben.
+
+Kontrollplanet følger en hub-and-spoke-modell for registrering og dynamisk ruting. Dataplanet kan derimot etablere direkte forbindelser mellom spokes, slik at trafikken ikke trenger å fortsette via hubben når en snarvei først er opprettet.
+
+I Phase 3 sender hubben NHRP Redirect, mens spoke-ruterne bruker NHRP Shortcut. Den første trafikken kan dermed gå via hubben, før det etableres en direkte spoke-to-spoke-forbindelse.
+
+Dette reduserer unødvendig trafikk gjennom BNHQ og gjør det enklere å legge til nye lokasjoner uten å opprette et komplett sett med statiske punkt-til-punkt-tunneler.
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/logisk_arkitektur.png}
-    \caption{DMVPN Phase 3-arkitektur mellom hub og spoke-sites.}
+    \caption{DMVPN Phase 3-arkitektur mellom hub og spoke-lokasjoner.}
     \label{fig:logisk_arkitektur_dmvpn}
 \end{figure}
 \noindent
-Det eksisterende Layer 3-VPN-et levert av det litauiske forsvaret benyttes kun som underlay. DMVPN etableres som et separat overlay og krever derfor ingen endringer i den eksternt leverte transporttjenesten.\\[1em]
-For de overlayene hvor IPsec er aktivert, etableres krypterte forbindelser mellom DMVPN-peerene. På denne måten beskyttes konfidensialitet og integritet selv om trafikken transporteres over en underliggende infrastruktur som eFP ikke administrerer.\\[1em]
-BNHQ er i tillegg lokasjon for sentrale tjenester som TACACS+, syslog, NTP og Security Onion. Tilkoblingen mot sivil ISP er også terminert på BNHQ.
+DMVPN-overlayet bruker det eksisterende lag-3-VPN-et fra det litauiske forsvaret som transportnett, slik at leverandørkonfigurasjonen kan stå uendret (F4). Dette forutsetter at transportnettet har nødvendig ruting og slipper gjennom tunneltrafikken. Ruting, filtrering og MTU må derfor verifiseres før produksjonssetting.
+
+Overlay med behov for konfidensialitet og integritet beskyttes med IPsec (K2). Dermed er trafikken beskyttet også når den går gjennom infrastruktur som eFP ikke administrerer.
+
+BNHQ samler de sentrale tjenestene, blant annet TACACS+, syslog, NTP og Security Onion, i tillegg til tilkoblingen mot sivil ISP.
 
 \subsection{Logisk design}
-Figur \ref{fig:logisk_ip} viser den logiske arkitekturen på et spoke-site.\\[1em]
-Klienter og tjenester plasseres i separate VLAN basert på funksjon. VLAN-ene termineres på site-ruteren, hvor hvert Layer 3-interface tilordnes den korresponderende VRF-en.\\[1em]
-VRF-Lite oppretter separate rutingtabeller for MGMT, INET, UNET, PA og MONITORING. Trafikk kan dermed ikke routes direkte mellom disse segmentene uten at dette eksplisitt tillates av designet.\\[1em]
-Hver VRF har sitt eget DMVPN-overlay mellom sites. Dette gjør at segmenteringen som etableres lokalt videreføres gjennom WAN-et, selv om alle overlayene fysisk transporteres over den samme underliggende forbindelsen.
+VLAN skiller tjenestene lokalt, mens VRF-Lite og separate overlay viderefører segmenteringen på lag 3 og mellom lokasjonene (K1). Kommunikasjon som skal tillates mellom soner styres av en eksplisitt trafikkpolicy (K2).
+
+Figur \ref{fig:logisk_ip} viser den logiske arkitekturen på et spoke-site. Klienter og tjenester ble fordelt på VLAN etter funksjon. VLAN-ene ble lagt til lokasjonsruteren, med hvert lag-3-grensesnitt tilordnet den tilhørende VRF-en.
+
+MGMT, INET, UNET, PA og MONITORING ligger i hver sin VRF og har dermed separate rutingtabeller. Trafikk mellom sonene krever en eksplisitt definert sammenkobling og tilhørende trafikkpolicy.
+
+Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenteringen over WAN-et, selv om overlayene bruker det samme underliggende transportnettet.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/log_ip.jpg}
-    \caption{Logisk design for nettverket på Site X.}
+    \caption{Logisk design for nettverket på lokasjon X.}
     \label{fig:logisk_ip}
 \end{figure}
 \noindent
-HUB-lokasjonen BNHQ skiller seg noe fra spoke-lokasjonene fordi sentrale servere og WAN-/ISP-tilkobling er plassert her. BNHQ fungerer samtidig som DMVPN-hub og som sentral lokasjon for administrasjon, logging, tidsdistribusjon og sikkerhetsovervåkning.
+BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester og WAN-/ISP-tilkoblingen ble samlet her. Dette ga et felles administrasjons- og overvåkningspunkt, men medførte også avhengigheter som måtte vurderes ved bortfall av BNHQ.
 
 \subsection{Nettverkssikkerhet}
-Nettverkssikkerheten bygger på en kombinasjon av segmentering, tilgangskontroll, autentisering, kryptering, Layer 2-beskyttelse og sentral overvåkning.\\[1em]
-VRF-Lite reduserer muligheten for lateral kommunikasjon mellom tjenestenettene, mens ACL-er håndhever hvilke protokoller og tjenester som tillates fra det enkelte segment.\\[1em]
-Administrasjon av nettverksenhetene skjer gjennom SSH og begrenses til definerte MGMT-nett. TACACS+ benyttes for sentral autentisering, autorisasjon og accounting av administrativ aktivitet, med lokal bruker som fallback dersom den sentrale tjenesten ikke er tilgjengelig.\\[1em]
-IPsec benyttes på de DMVPN-overlayene hvor trafikken skal beskyttes mot innsyn og manipulering under transport mellom sites.\\[1em]
-På aksesslaget benyttes DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, Port Security og STP-beskyttelse for å redusere risikoen knyttet til uautoriserte eller feilkonfigurerte enheter.
+Sikkerhetsdesignet kombinerer segmentering, tilgangskontroll, autentisering, kryptering, lag-2-beskyttelse og sentral overvåkning. Ingen av mekanismene står alene, de skal utfylle hverandre.
+
+VRF-Lite reduserer muligheten for lateral kommunikasjon mellom tjenestenettene, mens ACL-er håndhever hvilke protokoller og tjenester som tillates fra det enkelte segment.
+
+Nettverksenhetene administreres over SSH fra definerte MGMT-nett. TACACS+ håndterer sentral autentisering, autorisasjon og accounting av administrativ aktivitet, mens en lokal bruker fungerer som reserve dersom den sentrale tjenesten ikke er tilgjengelig.
+
+DMVPN-overlay som fører trafikk med beskyttelsesbehov bruker IPsec for å hindre innsyn og manipulering under transport mellom lokasjonene.
+
+I aksesslaget brukes DHCP Snooping, Dynamic ARP Inspection, IP Source Guard, Port Security og STP-beskyttelse. Tiltakene reduserer risikoen fra uautoriserte eller feilkonfigurerte enheter på klientportene.
 
 \subsubsection{Tilgangskontroll mellom nettverk}
-Trafikk mellom tjenestenettene følger en eksplisitt trafikkpolicy. Generatoren oversetter denne policyen til extended ACL-er som plasseres inbound på Layer 3-interface for den aktuelle kilde-VRF-en.\\[1em]
-Bare eksplisitt definert trafikk tillates. ACL-ene avsluttes med en eksplisitt deny-regel med logging. Dette innebærer at tjenestematrisen fungerer som kilde til sannhet for hvilken kommunikasjon som skal være mulig mellom segmentene.\\[1em]
-Denne modellen følger et least-privilege-prinsipp og reduserer konsekvensen dersom en klient kompromitteres.
+ACL-ene håndhever trafikkpolicyen i K2, men de oppretter ikke ruting mellom VRF-er. Trafikk som skal krysse en VRF-grense krever derfor både en kontrollert rutingsmekanisme og en ACL som tillater den aktuelle flyten.
+
+Kommunikasjon mellom tjenestenettene styres av reglene i \texttt{FLOW\_POLICY}. Generatoren oversetter reglene til extended ACL-er og plasserer dem inbound på de lokale lag-3-grensesnittene for de oppførte kilde-VRF-ene. Dersom policyarket er tomt, genereres heller ingen slike ACL-er. Det må derfor kontrolleres at alle relevante kildesoner er dekket. Trafikk mellom klienter i samme VLAN passerer normalt ikke disse ruter-ACL-ene.
+
+Tjenestematrisen er den autoritative beskrivelsen av hvilken kommunikasjon som skal tillates. Hver genererte ACL avsluttes med en deny-regel med logging, slik at øvrig trafikk på de aktuelle grensesnittene blokkeres.
+
+Dette følger prinsippet om minste privilegium og begrenser hvor langt en kompromittert klient kan kommunisere i nettet.
 
 \subsubsection{Administrasjon og AAA}
-Nettverksenheter administreres ved hjelp av SSH versjon 2. Telnet benyttes ikke.\\[1em]
-Tilgang til VTY-linjene begrenses ved hjelp av en egen SSH-MGMT-ONLY ACL slik at administrativ tilgang bare kan initieres fra godkjente MGMT-nett.\\[1em]
-TACACS+ benyttes som sentral AAA-tjeneste. Dette muliggjør sentral autentisering av administratorer, kontroll av administrative rettigheter og accounting av administrative sesjoner og kommandoer.\\[1em]
-Ved bortfall av TACACS+-tjenesten benyttes lokal autentisering som fallback slik at nettverksenhetene fortsatt kan administreres.
+K4 ivaretas gjennom et eget administrasjonsnett, SSH og sentral AAA. Innlogging, rettigheter, logging og reserveinnlogging må likevel testes hver for seg.
 
-\subsubsection{Sikkerhetsovervåkning og logging}
-Sikkerhetsovervåkning består av to separate datakilder: systemlogger fra nettverksenhetene og speilet nettverkstrafikk.\\[1em]
-Alle relevante nettverksenheter sender syslog-meldinger til den sentrale loggtjenesten på BNHQ. Loggene tidsstemples og nettverksenhetene synkroniseres mot et felles NTP-hierarki slik at hendelser kan korreleres mellom flere enheter.\\[1em]
-Relevant dataplantrafikk fra spoke-sites speiles ved hjelp av ERSPAN. ERSPAN transporterer kopier av utvalgte pakker gjennom MONITORING-nettet til Security Onion på BNHQ.\\[1em]
-ERSPAN transporterer dermed ikke systemlogger og skal ikke forveksles med syslog. Syslog beskriver hendelser generert av nettverksenhetene, mens ERSPAN gjør selve nettverkstrafikken tilgjengelig for analyse.\\[1em]
-Security Onion benyttes som sentral IDS- og sikkerhetsovervåkningsplattform. Plattformen mottar speilet trafikk og kan benyttes til blant annet nettverksanalyse, deteksjon og hendelseshåndtering.\\[1em]
-Ved å kombinere nettverkstrafikk med sentrale systemlogger får administratorene et bedre grunnlag for å identifisere og analysere sikkerhetshendelser.
+Fjernadministrasjon skjer med SSH versjon 2. Telnet er ikke en del av designet.
+
+ACL-en \texttt{SSH-MGMT-ONLY} begrenser VTY-tilgang til godkjente MGMT-nett, slik at andre segmenter ikke kan initiere administrative SSH-sesjoner.
+
+TACACS+ er den sentrale AAA-tjenesten. Generatorene konfigurerer innloggingsautentisering, EXEC-autorisasjon og accounting av EXEC-sesjoner og kommandoer på privilege-nivå 15. Det opprettes derimot ingen egen metodeliste for kommandoautorisasjon, så individuell godkjenning av hver kommando inngår ikke i denne generatorversjonen.
+
+En lokal bruker gir reserveinnlogging dersom TACACS+-tjenesten ikke er tilgjengelig. Samspillet mellom autentisering og EXEC-autorisasjon må verifiseres særskilt, og reservebrukeren skal ikke omgå et eksplisitt avslag fra en tilgjengelig TACACS+-server.
+
+\subsubsection{Tilgangskontroll på klientporter}
+Utvalgte klientporter bruker IEEE 802.1X med RADIUS for å kontrollere hvem som får nettverkstilgang (K3). Aksessvitsjen fungerer som authenticator og RADIUS-klient mot FreeRADIUS. Server-, sensor- og infrastrukturlenker bruker egne portprofiler, mens endepunkter uten 802.1X-støtte må håndteres gjennom en dokumentert unntakspolicy.
+
+DHCP snooping blokkerer uautoriserte DHCP-servere, mens DAI, IP Source Guard og port security beskytter mot forfalskede adresser og uønsket bruk av klientporter. Inter-switch-forbindelser konfigureres som trusted for både DHCP snooping og DAI, slik at legitim DHCP- og ARP-trafikk fra underliggende svitsjer kan passere. Klientporter forblir untrusted. STP-beskyttelse begrenser i tillegg konsekvensene av feilkoblinger og bidrar til K6.
+
+\subsubsection{Overvåkning, logging og tidsgrunnlag}
+Overvåkningen består av sentral syslog, trafikkspeiling til Security Onion og SNMPv3 med \texttt{authPriv}. Syslog og speilet trafikk gir grunnlag for hendelses- og sikkerhetsanalyse (K5), mens SNMP også brukes til tilstandsovervåkning og støtter K6. Trafikkspeilingen er passiv og blokkerer ikke angrep i seg selv.
+
+NTP gir enhetene et felles tidsgrunnlag. Rutergeneratoren setter hubben som \texttt{ntp master 8}, spoke-ruterne synkroniseres mot hubbens Loopback0-adresse, og svitsjene bruker lokal gateway. Denne generatorversjonen har verken ekstern autoritativ tidskilde eller reservekilde. Oppsettet kan derfor gi konsistente tidsstempler internt, men dokumenterer ikke korrekt UTC. Autoritativ tid, redundans, tidsavvik og oppførsel ved bortfall må avklares og testes separat.
+
+I ERSPAN-oppsettet mottar HUB SW1 de speilede strømene og sender dem videre til en dedikert sensorport. På de øvrige svitsjene speiles inngående klienttrafikk, og på lokasjonens SW1 speiles også trafikk som kommer inn fra ruteren. Inter-switch-trunker er utelatt for å unngå duplikater. Trafikk som bare går lokalt på HUB SW1 fanges ikke av denne varianten, og er derfor en kjent begrensning i dekningen (K5).
+
+Løsningen forutsetter at det aktuelle utstyret støtter valgt speilingsmetode og har tilstrekkelig kapasitet. Mengden speilet trafikk må begrenses slik at den ikke fortrenger operative tjenester. Overvåkningen har dessuten liten verdi uten en tydelig mottaker av varsler og en etablert rutine for oppfølging.
 
 \subsubsection{Sikkerhetsmekanismer på rutere}
+Tabell \ref{tab:router-security} oppsummerer mekanismene i ruterdesignet. Segmentering og trafikkpolicy bidrar til K1 og K2, administrasjonsmekanismene til K4 og logging og tidssynkronisering til K5. Tabellen oppsummerer de valgte mekanismenes funksjon.
+
 
 \begin{table}[H]
 \centering
-\caption{Sikkerhetsmekanismer implementert på site-rutere.}
+\caption{Sikkerhetsmekanismer i designet for lokasjonsrutere.}
 \vspace{5pt}
 \small
 \setlength{\tabcolsep}{6pt}
@@ -415,7 +386,7 @@ Skiller tjenestenettene i separate rutingtabeller og reduserer muligheten for la
 Flow-policy / ACL &
 Tillater bare eksplisitt definert trafikk mellom segmentene og blokkerer øvrig trafikk. \\
 DMVPN Phase 3 &
-Gir skalerbar dynamisk kommunikasjon mellom sites og muliggjør direkte spoke-to-spoke-shortcuts. \\
+Gir skalerbar dynamisk kommunikasjon mellom lokasjoner og muliggjør direkte spoke-to-spoke-shortcuts. \\
 IPsec &
 Beskytter utvalgte DMVPN-overlay mot avlytting og manipulering. \\
 SSH v2 &
@@ -423,7 +394,7 @@ Gir kryptert fjernadministrasjon av nettverksenhetene. \\
 SSH-MGMT-ONLY ACL &
 Begrenser administrativ tilgang til godkjente MGMT-nett. \\
 AAA / TACACS+ &
-Gir sentral autentisering, autorisasjon og accounting av administrativ aktivitet. \\
+Gir innloggingsautentisering, EXEC-autorisasjon og accounting av sesjoner og kommandoer på nivå 15. \\
 Syslog &
 Sender system- og sikkerhetshendelser til sentral loggtjeneste. \\
 NTP &
@@ -433,7 +404,7 @@ Hindrer ruteren i å påvirke klientenes ruting ved hjelp av ICMP Redirect. \\
 No Proxy ARP &
 Hindrer ruteren i å svare på ARP på vegne av andre systemer. \\
 EIGRP passive-interface &
-Begrenser etablering av EIGRP-naboskap til interface hvor routingprotokollen faktisk skal benyttes. \\
+Begrenser etablering av EIGRP-naboskap til grensesnitt der rutingprotokollen faktisk skal benyttes. \\
 \bottomrule
 \end{tabular}
 \rowcolors{1}{}{}
@@ -441,11 +412,13 @@ Begrenser etablering av EIGRP-naboskap til interface hvor routingprotokollen fak
 \end{table}
 
 \subsubsection{Sikkerhetsmekanismer på svitsjer}
+Tabell \ref{tab:switch-security} oppsummerer tiltakene i aksesslaget. Klient- og portkontroll bidrar til K3, STP-beskyttelse og EtherChannel til K6, administrasjon til K4 og trafikkspeiling og logging til K5.
+
 
 \begin{table}[H]
 
 \centering
-\caption{Sikkerhetsmekanismer implementert på svitsjer.}
+\caption{Sikkerhetsmekanismer i designet for svitsjer.}
 \vspace{5pt}
 \small
 
@@ -470,13 +443,13 @@ DHCP Snooping &
 Blokkerer uautoriserte DHCP-servere og etablerer bindinger mellom port, IP-adresse og MAC-adresse. \\
 
 Dynamic ARP Inspection &
-Validerer ARP-trafikk mot gyldige IP--MAC-bindinger og reduserer ARP spoofing. \\
+Validerer ARP-trafikk mot gyldige IP--MAC-bindinger og reduserer ARP-spoofing. \\
 
 IP Source Guard &
-Kontrollerer at trafikk inn på en accessport benytter en gyldig source-IP. \\
+Kontrollerer at trafikk inn på en aksessport benytter en gyldig kilde-IP-adresse. \\
 
 Port Security &
-Begrenser hvilke og hvor mange MAC-adresser som kan benyttes på en accessport. \\
+Begrenser hvilke og hvor mange MAC-adresser som kan benyttes på en aksessport. \\
 
 BPDU Guard &
 Stenger edge-porter dersom de mottar BPDU-er. \\
@@ -485,7 +458,7 @@ Root Guard &
 Hindrer uautoriserte downstream-svitsjer i å overta rollen som STP-root. \\
 
 Loop Guard &
-Reduserer risikoen for Layer 2-loops som følge av unidireksjonelle forbindelsesfeil. \\
+Reduserer risikoen for lag-2-løkker som følge av unidireksjonelle forbindelsesfeil. \\
 
 Blackhole VLAN &
 Plasserer ubrukte porter i et VLAN som ikke transporterer produksjonstrafikk. \\
@@ -513,7 +486,7 @@ ERSPAN &
 Gjør relevant nettverkstrafikk tilgjengelig for sentral IDS-analyse. \\
 
 EtherChannel &
-Gir redundans og økt tilgjengelighet på switch-to-switch-forbindelser. \\
+Gir redundans og økt tilgjengelighet på forbindelser mellom svitsjer. \\
 
 \bottomrule
 
@@ -526,15 +499,37 @@ Gir redundans og økt tilgjengelighet på switch-to-switch-forbindelser. \\
 \end{table}
 
 \subsection{Standardisering og konfigurasjonsgenerator}
-For å redusere manuelt konfigurasjonsarbeid og konfigurasjonsavvik genereres router- og switch-konfigurasjoner fra en standardisert Excel-mal.\\[1em]
-Malen inneholder blant annet informasjon om sites, VLAN, VRF, IP-adresser, tunneler, sikkerhetspolicy og sentrale tjenester. Generatoren bruker disse dataene til å produsere en konsistent konfigurasjon for hver nettverksenhet.\\[1em]
-Dette gjør det enklere å etablere nye sites og reduserer risikoen for at senere kontingenter innfører konfigurasjoner som avviker fra den definerte sikkerhetsbaselinen.
+Konfigurasjonsgeneratorene \texttt{site\_EDGE\_ROUTER\_script.py} og \texttt{site\_SWITCH\_script.py} produserer konsistente enhetskonfigurasjoner fra et felles Excel-grunnlag. Generering, utrulling og verifikasjon behandles som separate aktiviteter. Den faktiske konfigurasjonen på hver enhet avhenger av valgene i Excel-filen og dokumenteres gjennom de genererte filene.
+
+Rutergeneratoren håndterer VRF-Lite, DMVPN med fasevalg, EIGRP per VRF, IKEv1/IKEv2, DHCP, NAT/PAT, trafikkpolicy, QoS, SSH, TACACS+, syslog, NTP og valgfri SNMPv3. Designet bruker Phase 3. Svitsjegeneratoren håndterer blant annet portprofiler, VLAN, trunker, EtherChannel, aksessbeskyttelse, RADIUS/802.1X, SNMPv3 og flere speilingsmoduser.
+
+802.1X aktiveres på klientporter i VLAN som er oppført i \texttt{dot1x\_vlans}. Når \texttt{snmpv3\_enabled} er aktivert og nødvendige server- og brukerfelt er fylt ut, genereres SNMPv3 med lesetilgang, SHA-autentisering, AES-128 og tilgangsbegrensning mot administrasjonsserveren. Traps inngår ikke i denne konfigurasjonen. Generatoren kan også opprette FreeRADIUS-klientoppføringer, mens brukere, sertifikater og selve servertjenesten må konfigureres separat.
+
+Standardisering og konfigurasjonskontroll støtter K8 samt rammebetingelsene F1 og F5. Målet er å redusere manuelt arbeid, konfigurasjonsavvik og personavhengighet.
+
+En felles Excel-mal fungerer som datagrunnlag for både ruter- og svitsjkonfigurasjoner. Dermed kan de samme opplysningene gjenbrukes i stedet for å legges inn manuelt på hver enhet.
+
+Excel-malen samlet data om lokasjoner, VLAN, VRF-er, IP-adresser, tunneler, sikkerhetspolicy og sentrale tjenester. Generatorene brukte dette grunnlaget til å produsere enhetskonfigurasjoner.
+
+Et felles datagrunnlag og faste maler gjør det enklere å utvide nettet og reduserer risikoen for konfigurasjonsavvik ved kontingentskifte.
+
+K8 krever kontroll på både ønsket og faktisk konfigurasjon, endringshistorikk og mulighet for gjenoppretting. Derfor bør Excel-grunnlaget, generatorene og de genererte konfigurasjonsfilene versjoneres. Ansible kan brukes til innsamling, sikkerhetskopiering, utrulling og verifikasjon. En generert konfigurasjon erstatter likevel ikke en sikkerhetskopi av den kjørende tilstanden, og gjenoppretting må testes i praksis.
+
+Ved HO/TO bør dokumentasjonen minst dekke topologi, adresseplan, tjenestepolicy, portprofiler, avhengigheter og gjenopprettingsrutiner. Det må også være tydelig hvem som har ansvar for endringsgodkjenning, vedlikehold og oppfølging av avvik.
+
+\subsection{Fysiske og organisatoriske tiltak}
+K7 kan ikke løses med nettverkskonfigurasjon alene. Ubrukte uttak bør deaktiveres, portprofiler dokumenteres og nettverksutstyr plasseres skjermet. I tillegg må rom, uttak og brukergrupper kartlegges slik at soneinndeling (K1) og porttilgang (K3) bygger på faktiske operative behov.
+
+Segmentering løser ikke risikoen for at en kompromittert Internett-klient kan ta opp samtaler i et sensitivt rom. Klientplassering, endepunktsikring og bruk av flyttbare lagringsmedier må derfor avklares med S6 og sikkerhetsfunksjonen. Designet gjelder det UGRADERTE nettet og innebærer ingen godkjenning for behandling av gradert informasjon.
+
+Før overlevering må ansvar for brukerforvaltning, rettigheter, varsler, oppdateringer og hendelseshåndtering være avklart. Opplæring og driftsprosedyrer er en del av dokumentasjonsbehovet i F5. Ressursbruken må samtidig vurderes mot F1, og uavklarte forhold må synliggjøres for S6.
 
 \subsection{Operative konsekvenser}
-Segmenteringen innebærer at kommunikasjon som tidligere var mulig i det flate nettverket ikke lenger automatisk tillates. Applikasjoner eller tjenester som krever kommunikasjon mellom segmentene må derfor være identifisert og inkludert i trafikkpolicyen før løsningen settes i produksjon.\\[1em]
-Feil eller mangler i ACL-er, DHCP-sikkerhet, STP-konfigurasjon eller dynamisk ruting kan føre til bortfall av tjenester. Endringene skal derfor valideres i det tilgjengelige testmiljøet før produksjonssetting.\\[1em]
-Samtidig reduserer den standardiserte arkitekturen den løpende driftsbelastningen. Sentral AAA, logging, NTP, dynamisk ruting og automatisk generering av konfigurasjon reduserer behovet for manuell konfigurasjon og gjør feilsøking enklere.\\[1em]
-DMVPN Phase 3 gjør det mulig å legge til nye spoke-sites uten at det må opprettes separate punkt-til-punkt-tunneler mellom alle lokasjoner. Dette forbedrer skalerbarheten sammenlignet med en tradisjonell full-mesh av statiske GRE-tunneler.
+Segmenteringen gjør at kommunikasjon som tidligere fungerte fritt i det flate nettet, ikke lenger tillates automatisk. Nødvendige applikasjons- og tjenesteflyter må derfor være identifisert og lagt inn i trafikkpolicyen før produksjonssetting.
 
-\subsection{Testing og produksjonssetting}
-\dots 
+Feil i ACL-er, DHCP-beskyttelse, STP eller ruting kan føre til bortfall av tjenester. Konfigurasjonen bør derfor valideres i et separat testmiljø før den tas i produksjon.
+
+Standardiseringen skal redusere driftsbelastningen (F1), men sentrale tjenester gir også nye vedlikeholdsoppgaver. Gevinsten ved AAA, logging, NTP og konfigurasjonsgenerering må derfor veies mot arbeidet med servere, sertifikater, brukere og overvåkningsregler. At tjenestene er sentralisert, dokumenterer ikke alene at ressursbehovet blir lavere.
+
+DMVPN Phase 3 gjør det mulig å legge til nye spoke-lokasjoner uten at det må opprettes separate punkt-til-punkt-tunneler mellom alle lokasjoner. Dette forbedrer skalerbarheten sammenlignet med en tradisjonell full-mesh av statiske GRE-tunneler.
+

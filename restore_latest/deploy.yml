@@ -1,0 +1,45 @@
+---
+- name: Stage latest normal backup on device
+  hosts: cisco
+  gather_facts: false
+
+  vars_files:
+    - ../../vars.yml
+
+  tasks:
+    - name: Find normal backup files
+      ansible.builtin.find:
+        paths: "{{ backup_root }}/{{ inventory_hostname }}"
+        patterns: "*.cfg"
+        file_type: file
+        recurse: false
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+      register: backup_files
+
+    - name: Stop if no normal backup exists
+      ansible.builtin.fail:
+        msg: "No normal backup found for {{ inventory_hostname }}"
+      when: backup_files.matched | int == 0
+
+    - name: Select newest normal backup
+      ansible.builtin.set_fact:
+        restore_file: >-
+          {{
+            (
+              backup_files.files
+              | sort(attribute='mtime', reverse=true)
+              | first
+            ).path
+          }}
+
+    - name: Show selected backup
+      ansible.builtin.debug:
+        msg: "Selected {{ restore_file }} for {{ inventory_hostname }}"
+
+    - name: Copy latest backup to device flash
+      ansible.netcommon.net_put:
+        src: "{{ restore_file }}"
+        dest: "flash:/ansible-restore.cfg"
+        protocol: scp

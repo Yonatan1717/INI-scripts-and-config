@@ -868,6 +868,7 @@ def _allocate_qos_percentages(ip_data, total_percent=75):
     )
     for idx, _weight in order[:remaining]:
         allocated[idx] += 1
+
     return allocated
 
 
@@ -1546,6 +1547,7 @@ def enable_ssh(md, vrf_data, ip_data, sites_data, sn, domain=SSH_DOMAIN):
     my_data["config"][_secret_command(f"username {username} privilege 15", password, secret_type)] = []
     my_data["config"]["crypto key generate rsa general-keys modulus 2048"] = []
     my_data["config"]["ip ssh version 2"] = []
+    my_data["config"]["ip scp server enable"] = []
     
     
     this_site = f"site {sn}"
@@ -1636,7 +1638,7 @@ def create_global_config(md, router_id, intf_prefix, sn, is_hub):
     my_data["config"]["service tcp-keepalives-in"] = []
     my_data["config"]["service tcp-keepalives-out"] = []
     my_data["config"]["no ip source-route"] = []
-    my_data["config"]["banner motd ^CKun autorisert tilgang er tillatt. Aktivitet kan bli logget.^C"] = []
+    my_data["config"]["banner motd # Kun autorisert tilgang er tillatt. Aktivitet kan bli logget. #"] = []
 
     my_data["config"]["interface loopback0"] = []
     my_data["config"]["interface loopback0"].append(
