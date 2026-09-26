@@ -381,3 +381,93 @@ I et vanlig oppsett kommuniserer supplicanten med authenticatoren ved hjelp av E
 \end{tabular}
 
 \end{table}
+
+\subsection{Ansible}
+Ansible er et verktøy for automatisering av IT-oppgaver, inkludert konfigurasjonsstyring, utrulling og orkestrering. Det brukes til å sikre konsistente konfigurasjoner, automatisere repetitive oppgaver, hente sikkerhetskopier, utrulling av konfigurasjoner og administrasjon av systemer. Ansible er designet med følgende prinsipper beskrevet i tabell \ref{tab:ansible-prinsipper}, og består av konsepter beskrevet i tabell \ref{tab:ansible-konsepter} \cite{ansible}.
+\begin{table}[H]
+
+\centering
+
+\caption{Hovedprinsipper i Ansible}
+
+\label{tab:ansible-prinsipper}
+
+\small
+
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{@{}ll@{}}
+
+\toprule
+
+\parbox[t]{0.3\textwidth}{\textbf{Prinsipp}} & \parbox[t]{0.7\textwidth}{\textbf{Beskrivelse}} \\
+
+\midrule
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Agentløs arkitektur}} & \parbox[t]{0.7\textwidth}{\raggedright Ansible kommuniserer med målsystemene over SSH uten å kreve installasjon av agenter.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Simplicity (enkelthet)}} & \parbox[t]{0.7\textwidth}{\raggedright Automasjon \texttt{playbooks} bruker enkel YAML-syntaks som er lett å lese og forstå. Er desentralisert, bruker SSH med eksisterende OS-brukere for å autentisere mot målsystemene, og krever minimal konfigurasjon.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Skalarbarhet og fleksibilitet}} & \parbox[t]{0.7\textwidth}{\raggedright Enkelt og rask skalrer systemer, en ølnsker å automatiserer gjennom modular design som støtter mange målsystemer, som f.eks. nettverksenheter.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Idempotens}} & \parbox[t]{0.7\textwidth}{\raggedright Ansible sikrer at gjentatte kjøringer av samme \texttt{playbook} ikke endrer systemet unødvendig, noe som gir forutsigbarhet og reduserer risikoen for feil.} \\
+
+\bottomrule
+
+\end{tabular}
+
+\end{table}
+
+\begin{table}[H]
+
+\centering
+
+\caption{Hovedkonsepter i Ansible}
+
+\label{tab:ansible-konsepter}
+
+\small
+
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{@{}ll@{}}
+
+\toprule
+
+\parbox[t]{0.3\textwidth}{\textbf{Konsept}} & \parbox[t]{0.7\textwidth}{\textbf{Beskrivelse}} \\
+
+\midrule
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Control Node}} & \parbox[t]{0.7\textwidth}{\raggedright Den maskinen der Ansible kjøres fra, som styrer og administrerer målsystemene.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Managed Nodes}} & \parbox[t]{0.7\textwidth}{\raggedright De målsystemene som administreres av Ansible fra control node.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Playbook}} & \parbox[t]{0.7\textwidth}{\raggedright En YAML-fil som definerer ønsket tilstand og sekvensen av oppgaver som skal utføres på målsystemene.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Inventory}} & \parbox[t]{0.7\textwidth}{\raggedright En liste over målsystemene som Ansible skal administrere, ofte organisert i grupper.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Module}} & \parbox[t]{0.7\textwidth}{\raggedright En enhet av funksjonalitet som utfører en spesifikk oppgave på målsystemene, som å installere pakker eller administrere filer.} \\
+
+\addlinespace
+
+\parbox[t]{0.3\textwidth}{\footnotesize\textbf{Role}} & \parbox[t]{0.7\textwidth}{\raggedright En måte å organisere playbooks og relaterte filer på for å fremme gjenbruk og modulær struktur.} \\
+
+\bottomrule
+
+\end{tabular}
+
+\end{table}

@@ -1937,6 +1937,289 @@ def config_to_text(data, indent=0):
     return lines
 
 
+
+
+def _ansible_normalize_key(key):
+    """Normalize generator-only key prefixes such as ``!\ninterface``."""
+    parts = [
+        line.strip()
+        for line in str(key).replace("\r", "").splitlines()
+        if line.strip() and line.strip() != "!"
+    ]
+    return parts[-1] if parts else ""
+
+
+def _ansible_merge_value(existing, new_value):
+    """Merge duplicate normalized Cisco parent blocks while preserving order."""
+    if isinstance(existing, dict) and isinstance(new_value, dict):
+        merged = dict(existing)
+        for key, value in new_value.items():
+            if key in merged:
+                merged[key] = _ansible_merge_value(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+
+    existing_list = existing if isinstance(existing, list) else [existing]
+    new_list = new_value if isinstance(new_value, list) else [new_value]
+    merged = list(existing_list)
+    for item in new_list:
+        if isinstance(item, str):
+            if item not in merged:
+                merged.append(item)
+        else:
+            merged.append(item)
+    return merged
+
+
+def _ansible_normalize_tree(data):
+    """Return a hierarchy suitable for ``cisco.ios.ios_config src=...``."""
+    if isinstance(data, dict):
+        result = {}
+        for raw_key, raw_value in data.items():
+            key = _ansible_normalize_key(raw_key)
+            if not key or key.lower() == "exit":
+                continue
+
+            # SSH must already exist before Ansible can push a full config.
+            # RSA generation is therefore kept in the manual bootstrap file,
+            # not in the idempotency-oriented full Ansible source file.
+            if key.lower().startswith("crypto key generate rsa"):
+                continue
+
+            value = _ansible_normalize_tree(raw_value)
+            if key in result:
+                result[key] = _ansible_merge_value(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+    if isinstance(data, list):
+        result = []
+        for item in data:
+            if isinstance(item, str):
+                line = item.strip()
+                if not line or line in {"!", "exit"}:
+                    continue
+                # Keep intentional repeated submode terminators such as
+                # exit-af-interface. They may occur more than once in one parent.
+                result.append(line)
+            else:
+                result.append(_ansible_normalize_tree(item))
+        return result
+
+    if isinstance(data, str):
+        line = data.strip()
+        return "" if line in {"", "!", "exit"} else line
+
+    return data
+
+
+def _ansible_config_to_text(data, indent=0):
+    """Render normalized Cisco hierarchy without ``!`` or plain ``exit``."""
+    lines = []
+    prefix = " " * indent
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if not key:
+                continue
+            lines.append(prefix + str(key))
+            lines.extend(_ansible_config_to_text(value, indent + 1))
+    elif isinstance(data, list):
+        for value in data:
+            if isinstance(value, str):
+                if value:
+                    lines.append(prefix + value)
+            else:
+                lines.extend(_ansible_config_to_text(value, indent))
+    elif isinstance(data, str) and data:
+        lines.append(prefix + data)
+
+    return lines
+
+
+def _switch_bootstrap_config(config_dict):
+    """Build a console-paste bootstrap for MGMT + local SSH/SCP.
+
+    It intentionally does not enable TACACS/RADIUS.  The full generated config
+    can move VTY login to centralized AAA after Ansible connectivity works.
+    """
+    config = _ansible_normalize_tree(config_dict)
+    selected = {}
+
+    def add_key(key):
+        if key in config:
+            selected[key] = config[key]
+
+    # Identity first.
+    for key in config:
+        if key.lower().startswith("hostname "):
+            add_key(key)
+            break
+
+    # Find the management SVI (VLAN 10 is the project default; fall back to the
+    # first SVI that has a static IP address).
+    svi_candidates = []
+    for key, value in config.items():
+        if not key.lower().startswith("interface vlan") or not isinstance(value, list):
+            continue
+        address = next(
+            (
+                cmd.split()[2]
+                for cmd in value
+                if isinstance(cmd, str)
+                and cmd.startswith("ip address ")
+                and len(cmd.split()) >= 4
+                and cmd.split()[2].lower() != "dhcp"
+            ),
+            None,
+        )
+        if not address:
+            continue
+        try:
+            vlan_id = int(key.lower().replace("interface vlan", "").strip())
+        except ValueError:
+            vlan_id = 99999
+        svi_candidates.append((0 if vlan_id == 10 else 1, vlan_id, key))
+
+    mgmt_vlan = None
+    if svi_candidates:
+        _priority, mgmt_vlan, svi_key = sorted(svi_candidates)[0]
+        add_key(f"vlan {mgmt_vlan}")
+        add_key(svi_key)
+
+        # Include the dedicated MGMT/server access port when the generator has
+        # one. This is convenient for direct console/bootstrap cabling.
+        for key, value in config.items():
+            if not key.lower().startswith("interface ") or key.lower().startswith("interface vlan"):
+                continue
+            if not isinstance(value, list):
+                continue
+            has_mgmt_access = any(
+                isinstance(cmd, str) and cmd == f"switchport access vlan {mgmt_vlan}"
+                for cmd in value
+            )
+            dedicated = any(
+                isinstance(cmd, str)
+                and cmd.lower().startswith("description dedicated")
+                for cmd in value
+            )
+            if has_mgmt_access and dedicated:
+                selected[key] = [
+                    cmd for cmd in value
+                    if isinstance(cmd, str)
+                    and (
+                        cmd == "switchport mode access"
+                        or cmd == f"switchport access vlan {mgmt_vlan}"
+                        or cmd == "spanning-tree portfast"
+                        or cmd == "no shutdown"
+                        or cmd.lower().startswith("description dedicated")
+                    )
+                ]
+
+    # Preserve the generated management default route/gateway.  In ERSPAN mode
+    # the switch uses ip routing; otherwise it uses ip default-gateway.
+    if "ip routing" in config:
+        add_key("ip routing")
+    for key in config:
+        low = key.lower()
+        if low.startswith("ip default-gateway ") or low.startswith("ip route 0.0.0.0 0.0.0.0 "):
+            add_key(key)
+
+    # Local SSH/SCP prerequisites.
+    for key in config:
+        low = key.lower()
+        if (
+            low.startswith("ip domain name ")
+            or low.startswith("username ")
+            or low == "ip ssh version 2"
+            or low == "ip scp server enable"
+            or low == "ip access-list standard ssh-mgmt-only"
+        ):
+            add_key(key)
+
+    raw_keys = {
+        _ansible_normalize_key(k): k for k in config_dict if _ansible_normalize_key(k)
+    }
+    rsa_key = next(
+        (k for k in raw_keys if k.lower().startswith("crypto key generate rsa")),
+        None,
+    )
+    if rsa_key:
+        selected[rsa_key] = []
+
+    # Local login makes bootstrap independent of TACACS availability.
+    for key, value in config.items():
+        if key.lower().startswith("line vty "):
+            vty_lines = []
+            if isinstance(value, list):
+                for cmd in value:
+                    if not isinstance(cmd, str):
+                        continue
+                    if cmd.startswith("login authentication ") or cmd == "login local":
+                        continue
+                    vty_lines.append(cmd)
+            insert_at = 1 if vty_lines and vty_lines[0].startswith("access-class ") else 0
+            vty_lines.insert(insert_at, "login local")
+            if "transport input ssh" not in vty_lines:
+                vty_lines.append("transport input ssh")
+            selected[key] = vty_lines
+            break
+
+    return selected
+
+
+def create_ansible_config_files(data):
+    """Generate per-site full Ansible configs plus SSH/SCP bootstrap configs."""
+    full_root = "ansibleConfigs"
+    bootstrap_root = "ansibleBootstrapConfigs"
+    os.makedirs(full_root, exist_ok=True)
+    os.makedirs(bootstrap_root, exist_ok=True)
+
+    count = 0
+    for site, site_data in data.items():
+        if str(site).startswith("_") or not isinstance(site_data, dict):
+            continue
+
+        site_slug = str(site).strip().lower().replace(" ", "_")
+        full_dir = os.path.join(full_root, site_slug)
+        boot_dir = os.path.join(bootstrap_root, site_slug)
+        os.makedirs(full_dir, exist_ok=True)
+        os.makedirs(boot_dir, exist_ok=True)
+
+        for device_name, config_dict in site_data.get("config", {}).items():
+            if not isinstance(config_dict, dict):
+                continue
+            hostname = next(
+                (
+                    _ansible_normalize_key(k).split(None, 1)[1]
+                    for k in config_dict
+                    if _ansible_normalize_key(k).lower().startswith("hostname ")
+                ),
+                str(device_name),
+            )
+
+            full_tree = _ansible_normalize_tree(config_dict)
+            full_text = _ansible_config_to_text(full_tree)
+            with open(os.path.join(full_dir, f"{hostname}.cfg"), "w", encoding="utf-8") as f:
+                f.write("\n".join(full_text).rstrip() + "\n")
+
+            bootstrap_tree = _switch_bootstrap_config(config_dict)
+            bootstrap_text = _ansible_config_to_text(bootstrap_tree)
+            with open(
+                os.path.join(boot_dir, f"{hostname}_SSH_SCP.cfg"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write("\n".join(bootstrap_text).rstrip() + "\n")
+            count += 1
+
+    print(
+        f"Ansible-ready switch-configer: {full_root}/ | "
+        f"SSH/SCP-bootstrap: {bootstrap_root}/ ({count} switch(er))."
+    )
+
 def create_or_update_config_files(data):
     output_root = "siteSwitchTextConfigs"
     os.makedirs(output_root, exist_ok=True)
@@ -2056,6 +2339,7 @@ def create_sw_configs_main(file, config_file="site_switch_config.json"):
         data = create_site_sw_config(file, sheet, config_file, erspan_context)
 
     create_or_update_config_files(data)
+    create_ansible_config_files(data)
     create_freeradius_config(file, sites_sheets)
 
 

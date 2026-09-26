@@ -3,7 +3,7 @@
 % Eksisterende figurstier og tabell-/figurlabels er beholdt.
 % K1--K8 erstatter den tidligere nummereringen 1--19.
 \begingroup
-\captionsetup[table]{justification=raggedright,singlelinecheck=false}
+\captionsetup[table]{justification=centering,singlelinecheck=false}
 \section{Design}
 Designarbeidet tok utgangspunkt i nettverket S6-seksjonen overtok ved HO/TO. Nettverket var flatt, kontrollen over tilkoblede enheter var begrenset, og det manglet både fjernadministrasjon og sentral overvåkning. Den nye løsningen skulle videreføre UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd, men samtidig gi S6 bedre kontroll med administrasjon, overvåkning og gjenoppretting.
 
@@ -15,7 +15,7 @@ Stabssjefen fastsatte, i samråd med S6, følgende rammebetingelser for rekonfig
 \small
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.18}
-\captionsetup{justification=raggedright,singlelinecheck=false}
+\captionsetup{justification=centering,singlelinecheck=false}
 \begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.08\linewidth} >{\raggedright\arraybackslash}p{0.25\linewidth} >{\raggedright\arraybackslash}p{0.60\linewidth}@{}}
 \caption{Rammebetingelser for rekonfigurasjonen.}\label{tab:rammebetingelser}\\
 \toprule
@@ -54,7 +54,7 @@ Krav som hadde størst betydning for sikkerhet og operativ funksjon fikk priorit
 \small
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.18}
-\captionsetup{justification=raggedright,singlelinecheck=false}
+\captionsetup{justification=centering,singlelinecheck=false}
 \begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.055\linewidth} >{\raggedright\arraybackslash}p{0.48\linewidth} >{\raggedright\arraybackslash}p{0.30\linewidth} >{\centering\arraybackslash}p{0.065\linewidth}@{}}
 \caption{Prioriterte designkrav og grunnlaget for dem.}\label{tab:designkrav}\\
 \toprule
@@ -264,7 +264,7 @@ Her er $P_i$ klassens prioriteringsvekt, $P_t$ summen av vektene og $B_i$ den be
 Fordelingen favoriserer operative tjenester og overvåkning når forbindelsen er presset. Generatoren bruker VLAN som grunnlag for klassifisering og DSCP for plassering i køklasser. Velferds- og Internett-trafikk får lavere prioritet fordi redusert ytelse der har mindre operativ konsekvens.
 
 \subsection{Fysisk design}
-Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas der det er mulig (K6). Fysisk sikring og kontroll med nettverksuttak må håndteres i tillegg, jf. K7.
+Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas der det er mulig (K6). Fysisk sikring og kontroll med nettverksuttak må håndteres i tillegg (K7).
 
 Det fysiske designet viser hvordan rutere, svitsjer, servere og endepunkter kobles sammen på hver lokasjon.
 
@@ -499,23 +499,150 @@ Gir redundans og økt tilgjengelighet på forbindelser mellom svitsjer. \\
 \end{table}
 
 \subsection{Standardisering og konfigurasjonsgenerator}
-Konfigurasjonsgeneratorene \texttt{site\_EDGE\_ROUTER\_script.py} og \texttt{site\_SWITCH\_script.py} produserer konsistente enhetskonfigurasjoner fra et felles Excel-grunnlag. Generering, utrulling og verifikasjon behandles som separate aktiviteter. Den faktiske konfigurasjonen på hver enhet avhenger av valgene i Excel-filen og dokumenteres gjennom de genererte filene.
 
-Rutergeneratoren håndterer VRF-Lite, DMVPN med fasevalg, EIGRP per VRF, IKEv1/IKEv2, DHCP, NAT/PAT, trafikkpolicy, QoS, SSH, TACACS+, syslog, NTP og valgfri SNMPv3. Designet bruker Phase 3. Svitsjegeneratoren håndterer blant annet portprofiler, VLAN, trunker, EtherChannel, aksessbeskyttelse, RADIUS/802.1X, SNMPv3 og flere speilingsmoduser.
+Konfigurasjonsgeneratoren bruker ett felles Excel-grunnlag for å produsere standardiserte konfigurasjoner for rutere og svitsjer. Excel-filen beskriver ønsket nettverksdesign, mens generatoren oversetter dette til enhetskonfigurasjon og filer som kan brukes videre av Ansible. Dette reduserer manuelt arbeid og gjør det enklere å bruke samme konfigurasjonsprinsipper på tvers av lokasjoner.
 
-802.1X aktiveres på klientporter i VLAN som er oppført i \texttt{dot1x\_vlans}. Når \texttt{snmpv3\_enabled} er aktivert og nødvendige server- og brukerfelt er fylt ut, genereres SNMPv3 med lesetilgang, SHA-autentisering, AES-128 og tilgangsbegrensning mot administrasjonsserveren. Traps inngår ikke i denne konfigurasjonen. Generatoren kan også opprette FreeRADIUS-klientoppføringer, mens brukere, sertifikater og selve servertjenesten må konfigureres separat.
+\begin{table}[H]
+    \centering
+    \caption{Oversikt over hva konfigurasjonsgeneratoren genererer.}
+    \label{tab:generator-output}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{2.8cm}
+        >{\raggedright\arraybackslash}p{12cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Område} &
+        \color{white}\textbf{Generert innhold} \\
+        \midrule
 
-Standardisering og konfigurasjonskontroll støtter K8 samt rammebetingelsene F1 og F5. Målet er å redusere manuelt arbeid, konfigurasjonsavvik og personavhengighet.
+        Ruter &
+        VRF-Lite, grensesnitt og gateway-adresser, DHCP, QoS, \texttt{FLOW\_POLICY}-ACL-er, DMVPN, EIGRP, valgfri IPsec, NAT/PAT og ruting. \\
+        \addlinespace[2pt]
 
-En felles Excel-mal fungerer som datagrunnlag for både ruter- og svitsjkonfigurasjoner. Dermed kan de samme opplysningene gjenbrukes i stedet for å legges inn manuelt på hver enhet.
+        Svitsjer &
+        VLAN, access- og trunkporter, EtherChannel, portsikkerhet, DHCP Snooping, DAI, IP Source Guard, STP-beskyttelse, RADIUS/802.1X og SPAN/RSPAN/ERSPAN. \\
+        \addlinespace[2pt]
 
-Excel-malen samlet data om lokasjoner, VLAN, VRF-er, IP-adresser, tunneler, sikkerhetspolicy og sentrale tjenester. Generatorene brukte dette grunnlaget til å produsere enhetskonfigurasjoner.
+        Administrasjon &
+        SSH/SCP, lokal administrasjonsbruker, TACACS+, syslog, NTP og valgfri SNMPv3. \\
+        \addlinespace[2pt]
 
-Et felles datagrunnlag og faste maler gjør det enklere å utvide nettet og reduserer risikoen for konfigurasjonsavvik ved kontingentskifte.
+        RADIUS &
+        FreeRADIUS-klienter med svitsjenes management-adresser. \\
+        \addlinespace[2pt]
 
-K8 krever kontroll på både ønsket og faktisk konfigurasjon, endringshistorikk og mulighet for gjenoppretting. Derfor bør Excel-grunnlaget, generatorene og de genererte konfigurasjonsfilene versjoneres. Ansible kan brukes til innsamling, sikkerhetskopiering, utrulling og verifikasjon. En generert konfigurasjon erstatter likevel ikke en sikkerhetskopi av den kjørende tilstanden, og gjenoppretting må testes i praksis.
+        Ansible &
+        \texttt{inventory.ini}, \texttt{legacy\_ssh.cfg}, enhets- og SSH/SCP-konfigurasjoner samt utrullingsplaybook. \\
+        \addlinespace[2pt]
 
-Ved HO/TO bør dokumentasjonen minst dekke topologi, adresseplan, tjenestepolicy, portprofiler, avhengigheter og gjenopprettingsrutiner. Det må også være tydelig hvem som har ansvar for endringsgodkjenning, vedlikehold og oppfølging av avvik.
+        Dokumentasjon / filer &
+        Tekstfiler og JSON-modeller for ruter- og svitsjkonfigurasjoner per site og enhet. \\
+
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+Excel-arbeidsboken er strukturert slik at nettverksdata og valg som varierer mellom lokasjoner kan endres uten at Python-koden må skrives om. Tabell \ref{tab:generator-input} viser hoveddataene generatoren forventer.
+
+\begin{table}[H]
+    \centering
+    \caption{Forventet datagrunnlag i Excel-filen.}
+    \label{tab:generator-input}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{3cm}
+        >{\raggedright\arraybackslash}p{6.5cm}
+        >{\raggedright\arraybackslash}p{5.6cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Del av Excel} &
+        \color{white}\textbf{Forventede data} &
+        \color{white}\textbf{Bruk} \\
+        \midrule
+
+        Site-/rutermetadata &
+        Site- og router-ID, interface-prefix, credentials/secret, HUB-rolle, tjenesteadresser og nøkler samt DMVPN-, IKE-, SNMP- og kompatibilitetsvalg. &
+        Felles parametere for ruter og sentrale tjenester. \\
+        \addlinespace[2pt]
+
+        IP-/VLAN-tabell &
+        VRF, VLAN, nett-ID, maske, gateway, fysisk grensesnitt, reserverte adresser og QoS/DSCP. &
+        Lager tjenestenett, DHCP, subinterfaces, ACL-bindinger og QoS. \\
+        \addlinespace[2pt]
+
+        VRF-tabell &
+        VRF-navn, loopback-nummer og -adresse. &
+        Oppretter VRF-er og stabile management-/rutingadresser. \\
+        \addlinespace[2pt]
+
+        Tunnel-tabell &
+        Tunnel-ID, VRF, tunneladresse/-maske, source-adresse, network-ID, GRE-modus, IPsec og eventuell nøkkel. &
+        Oppretter DMVPN-overlay, kildeloopbacker og eventuell IPsec. \\
+        \addlinespace[2pt]
+
+        Svitsjmetadata &
+        Site-ID, credentials/secret, EtherChannel-størrelse, speilingsmodus, 802.1X-VLAN og plattformvalg. &
+        Felles innstillinger for svitsjene. \\
+        \addlinespace[2pt]
+
+        Svitsjtabell &
+        Svitsj-ID, MGMT-adressering, interface-prefix, porter, downlinks, VLAN/port-fordeling og eventuell MONITORING-IP. &
+        Beregner portplan, trunker, EtherChannel, management og speiling. \\
+        \addlinespace[2pt]
+
+        \texttt{FLOW\_POLICY} &
+        \texttt{source}, \texttt{destination}, \texttt{protocol}, \texttt{destination\_port} og \texttt{action}. &
+        Oversettes til extended ACL-er mellom tjenestenettene. \\
+
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+Enkelte felt er betingede. RADIUS-parametere kreves eksempelvis når 802.1X brukes, mens MONITORING-adresser og tunneldata kreves når ERSPAN skal transporteres mellom sites. Generatoren utfører også validering av blant annet adresser, portkapasitet, sentrale tjenesteparametere og DMVPN-oppsett før konfigurasjonene skrives ut.
+
+Excel-filen og de genererte konfigurasjonene beskriver ønsket tilstand. Den faktiske tilstanden på utstyret dokumenteres separat gjennom sikkerhetskopi av \texttt{running-config}, som beskrevet i neste del.
+
+\subsection{Utrulling, sikkerhetskopi og gjenoppretting}
+
+\subsubsection{Utrulling }
+Diagramet under viser arbeidsflyten for utrulling av konfigurasjoner fra generering til verifikasjon og lagring i \texttt{startup-config}.
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{../../Media/init_pdf.pdf}
+\caption{Arbeidsflyt for utrulling av konfigurasjoner}
+\label{fig:utrulling_workflow}
+\end{figure}
+\noindent
+Dersom SSH ikke er tilgjengelig, er \texttt{copy and paste} versjon av konfigurasjonene også tilgjengelig.
+
+\subsubsection{Sikkerhetskopi}
+Diagrammet under viser arbeidsflyten for sikkerhetskopiering av konfigurasjoner før endringer (K8).
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{../../Media/backup_pdf.pdf}
+\caption{Arbeidsflyt for sikkerhetskopiering av konfigurasjoner}
+\label{fig:backup_workflow}
+\end{figure}
+
+\subsubsection{Gjenoppretting}
+Diagrammet under viser arbeidsflyten for gjenoppretting av konfigurasjoner fra sikkerhetskopi (K8).
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{../../Media/restore_pdf.pdf}
+\caption{Arbeidsflyt for gjenoppretting av konfigurasjoner}
+\label{fig:restore_workflow}
+\end{figure}
 
 \subsection{Fysiske og organisatoriske tiltak}
 K7 kan ikke løses med nettverkskonfigurasjon alene. Ubrukte uttak bør deaktiveres, portprofiler dokumenteres og nettverksutstyr plasseres skjermet. I tillegg må rom, uttak og brukergrupper kartlegges slik at soneinndeling (K1) og porttilgang (K3) bygger på faktiske operative behov.

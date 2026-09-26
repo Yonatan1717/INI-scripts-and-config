@@ -1,0 +1,13 @@
+---
+- name: Deploy generated Cisco configuration
+  hosts: cisco
+  gather_facts: false
+  connection: ansible.netcommon.network_cli
+  serial: 1
+
+  tasks:
+    - name: Apply generated configuration and save if changed
+      cisco.ios.ios_config:
+        src: "{{ inventory_dir }}/{{ config_file }}"
+        backup: true
+        save_when: modified

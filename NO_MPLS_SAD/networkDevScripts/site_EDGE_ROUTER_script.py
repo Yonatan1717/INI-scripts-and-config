@@ -2042,13 +2042,281 @@ def config_to_text(data, indent=0):
     return lines
 
 
-def create_or_update_config_files(data):
-    del data["hub"]
 
+
+def _ansible_normalize_key(key):
+    """Normalize generator-only key prefixes such as ``!\ninterface``."""
+    parts = [
+        line.strip()
+        for line in str(key).replace("\r", "").splitlines()
+        if line.strip() and line.strip() != "!"
+    ]
+    return parts[-1] if parts else ""
+
+
+def _ansible_merge_value(existing, new_value):
+    """Merge duplicate normalized Cisco parent blocks while preserving order."""
+    if isinstance(existing, dict) and isinstance(new_value, dict):
+        merged = dict(existing)
+        for key, value in new_value.items():
+            if key in merged:
+                merged[key] = _ansible_merge_value(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+
+    existing_list = existing if isinstance(existing, list) else [existing]
+    new_list = new_value if isinstance(new_value, list) else [new_value]
+    merged = list(existing_list)
+    for item in new_list:
+        if isinstance(item, str):
+            if item not in merged:
+                merged.append(item)
+        else:
+            merged.append(item)
+    return merged
+
+
+def _ansible_normalize_tree(data):
+    """Return a hierarchy suitable for ``cisco.ios.ios_config src=...``.
+
+    The human/copy-paste output intentionally contains ``!`` and explicit
+    ``exit`` commands.  The Ansible variant instead uses indentation as the
+    hierarchy and merges duplicate parent blocks such as repeated interfaces.
+    """
+    if isinstance(data, dict):
+        result = {}
+        for raw_key, raw_value in data.items():
+            key = _ansible_normalize_key(raw_key)
+            if not key or key.lower() == "exit":
+                continue
+
+            # RSA key generation is an interactive/bootstrap action.  A device
+            # must already have working SSH before Ansible can push this file.
+            if key.lower().startswith("crypto key generate rsa"):
+                continue
+
+            value = _ansible_normalize_tree(raw_value)
+            if key in result:
+                result[key] = _ansible_merge_value(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+    if isinstance(data, list):
+        result = []
+        for item in data:
+            if isinstance(item, str):
+                line = item.strip()
+                if not line or line in {"!", "exit"}:
+                    continue
+                # Keep intentional repeated submode terminators such as
+                # exit-af-interface. They may occur more than once in one parent.
+                result.append(line)
+            else:
+                result.append(_ansible_normalize_tree(item))
+        return result
+
+    if isinstance(data, str):
+        line = data.strip()
+        return "" if line in {"", "!", "exit"} else line
+
+    return data
+
+
+def _ansible_config_to_text(data, indent=0):
+    """Render normalized Cisco hierarchy without ``!`` or plain ``exit``."""
+    lines = []
+    prefix = " " * indent
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if not key:
+                continue
+            lines.append(prefix + str(key))
+            lines.extend(_ansible_config_to_text(value, indent + 1))
+    elif isinstance(data, list):
+        for value in data:
+            if isinstance(value, str):
+                if value:
+                    lines.append(prefix + value)
+            else:
+                lines.extend(_ansible_config_to_text(value, indent))
+    elif isinstance(data, str) and data:
+        lines.append(prefix + data)
+
+    return lines
+
+
+def _router_bootstrap_config(site_data):
+    """Build the minimum practical console bootstrap for Ansible SSH/SCP.
+
+    This includes the generated MGMT VRF/interface and local SSH credentials,
+    but deliberately avoids TACACS/RADIUS so the first Ansible login does not
+    depend on external AAA.  WAN/DMVPN reachability is not recreated here.
+    """
+    config = _ansible_normalize_tree(site_data.get("config", {}))
+    mgmt_ip = None
+    interfaces = site_data.get("network_info", {}).get("interfaces", {})
+    for _name, info in interfaces.items():
+        if str(info.get("vrf", "")).upper() == "MGMT" and info.get("address"):
+            mgmt_ip = str(info["address"])
+            break
+
+    selected = {}
+
+    def add_key(key):
+        if key in config:
+            selected[key] = config[key]
+
+    # Identity and management VRF.
+    for key in config:
+        low = key.lower()
+        if low.startswith("hostname "):
+            add_key(key)
+        elif low == "ip vrf mgmt" or low == "vrf definition mgmt":
+            add_key(key)
+
+    # Management interface used by the generated Ansible inventory.
+    mgmt_parent = None
+    if mgmt_ip:
+        for key, value in config.items():
+            if not key.lower().startswith("interface ") or not isinstance(value, list):
+                continue
+            if any(
+                isinstance(cmd, str)
+                and cmd.lower().startswith(f"ip address {mgmt_ip} ")
+                for cmd in value
+            ):
+                mgmt_parent = key
+                # Keep only commands needed to establish management reachability.
+                # Data-plane ACL/uRPF/QoS are intentionally left for the full
+                # Ansible deployment so bootstrap cannot lock out Ansible.
+                selected[key] = [
+                    cmd for cmd in value
+                    if isinstance(cmd, str)
+                    and (
+                        cmd.startswith("encapsulation dot1Q ")
+                        or cmd.lower() in {"ip vrf forwarding mgmt", "vrf forwarding mgmt"}
+                        or cmd.lower().startswith(f"ip address {mgmt_ip} ")
+                        or cmd == "no shutdown"
+                    )
+                ]
+                break
+
+    # If MGMT lives on a subinterface, make sure the physical parent is up.
+    if mgmt_parent and "." in mgmt_parent.split(None, 1)[1]:
+        physical = mgmt_parent.split(None, 1)[1].split(".", 1)[0]
+        parent_key = f"interface {physical}"
+        if parent_key in config:
+            parent_lines = [
+                cmd for cmd in config[parent_key]
+                if isinstance(cmd, str) and cmd in {"no shutdown"}
+            ]
+            if parent_lines:
+                selected[parent_key] = parent_lines
+
+    # Local SSH/SCP bootstrap.  RSA generation stays here because this file is
+    # intended to be pasted from console before Ansible is usable.
+    raw_config = site_data.get("config", {})
+    normalized_raw_keys = {
+        _ansible_normalize_key(k): k for k in raw_config if _ansible_normalize_key(k)
+    }
+    for key in config:
+        low = key.lower()
+        if (
+            low.startswith("ip domain name ")
+            or low.startswith("username ")
+            or low == "ip ssh version 2"
+            or low == "ip scp server enable"
+            or low == "ip access-list standard ssh-mgmt-only"
+        ):
+            add_key(key)
+
+    rsa_key = next(
+        (k for k in normalized_raw_keys if k.lower().startswith("crypto key generate rsa")),
+        None,
+    )
+    if rsa_key:
+        # Empty list = one top-level command when rendered.
+        selected[rsa_key] = []
+
+    # Use local authentication for bootstrap even though the final generated
+    # configuration later moves VTY login to the normal AAA policy.
+    for key, value in config.items():
+        if key.lower().startswith("line vty "):
+            vty_lines = []
+            if isinstance(value, list):
+                for cmd in value:
+                    if not isinstance(cmd, str):
+                        continue
+                    if cmd.startswith("login authentication ") or cmd == "login local":
+                        continue
+                    vty_lines.append(cmd)
+            insert_at = 1 if vty_lines and vty_lines[0].startswith("access-class ") else 0
+            vty_lines.insert(insert_at, "login local")
+            if "transport input ssh" not in vty_lines:
+                vty_lines.append("transport input ssh")
+            selected[key] = vty_lines
+            break
+
+    return selected
+
+
+def create_ansible_config_files(data):
+    """Generate idempotency-friendly full configs and console bootstrap files."""
+    full_root = "ansibleConfigs"
+    bootstrap_root = "ansibleBootstrapConfigs"
+    os.makedirs(full_root, exist_ok=True)
+    os.makedirs(bootstrap_root, exist_ok=True)
+
+    count = 0
+    for site, site_data in data.items():
+        if site == "hub" or not isinstance(site_data, dict):
+            continue
+
+        site_slug = str(site).strip().lower().replace(" ", "_")
+        hostname = next(
+            (
+                _ansible_normalize_key(k).split(None, 1)[1]
+                for k in site_data.get("config", {})
+                if _ansible_normalize_key(k).lower().startswith("hostname ")
+            ),
+            site_slug.upper(),
+        )
+
+        full_dir = os.path.join(full_root, site_slug)
+        boot_dir = os.path.join(bootstrap_root, site_slug)
+        os.makedirs(full_dir, exist_ok=True)
+        os.makedirs(boot_dir, exist_ok=True)
+
+        full_tree = _ansible_normalize_tree(site_data.get("config", {}))
+        full_text = _ansible_config_to_text(full_tree)
+        with open(os.path.join(full_dir, f"{hostname}.cfg"), "w", encoding="utf-8") as f:
+            f.write("\n".join(full_text).rstrip() + "\n")
+
+        bootstrap_tree = _router_bootstrap_config(site_data)
+        bootstrap_text = _ansible_config_to_text(bootstrap_tree)
+        with open(
+            os.path.join(boot_dir, f"{hostname}_SSH_SCP.cfg"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("\n".join(bootstrap_text).rstrip() + "\n")
+        count += 1
+
+    print(
+        f"Ansible-ready router-configer: {full_root}/ | "
+        f"SSH/SCP-bootstrap: {bootstrap_root}/ ({count} router(e))."
+    )
+
+def create_or_update_config_files(data):
     if not os.path.exists("siteEdgeRouterTextConfigs"):
         os.makedirs("siteEdgeRouterTextConfigs")
 
     for site, site_data in data.items():
+        if site == "hub" or not isinstance(site_data, dict):
+            continue
         config = site_data["config"]
         text = config_to_text(config)
 
@@ -2060,7 +2328,7 @@ def create_or_update_config_files(data):
             f.write("\n".join(text))
     
     print()
-    print(f"Text-versjoner av edge-router-configene er lagret i siteEdgeRouterTextConfigs/ ({len(data)} site(s)).")
+    print(f"Text-versjoner av edge-router-configene er lagret i siteEdgeRouterTextConfigs/.")
     print()
     
 
@@ -2109,6 +2377,7 @@ def create_edge_router_configs_main(file, config_file="EDGE_ROUTER_configs.json"
         )
     
     create_or_update_config_files(data)
+    create_ansible_config_files(data)
 
 
 def main():

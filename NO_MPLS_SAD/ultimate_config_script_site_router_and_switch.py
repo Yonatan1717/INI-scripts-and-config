@@ -1,7 +1,8 @@
 import json
 import os
 import sys
-from pathlib import Path
+import shutil
+from pathlib import Path, PurePosixPath
 
 BASE_DIR = Path(__file__).resolve().parent
 NETWORK_DEV_SCRIPTS = BASE_DIR / "networkDevScripts"
@@ -131,7 +132,7 @@ def _collect_router_inventory(router_data):
         if not mgmt_ip:
             raise ValueError(f"Fant ikke MGMT-IP for router {hostname} i {site_name}")
 
-        routers.append((hostname, mgmt_ip))
+        routers.append((hostname, mgmt_ip, site_name))
 
     return routers
 
@@ -154,7 +155,7 @@ def _collect_switch_inventory(switch_data):
             if not mgmt_ip:
                 raise ValueError(f"Fant ikke MGMT-IP for switch {hostname} i {site_name}")
 
-            switches.append((hostname, mgmt_ip))
+            switches.append((hostname, mgmt_ip, site_name))
 
     return switches
 
@@ -168,7 +169,7 @@ def _generate_legacy_ssh_config(routers, switches, output_dir):
     # Behold samme rekkefølge som inventory, men fjern eventuelle duplikate IP-er.
     device_ips = []
     seen = set()
-    for _hostname, ip in routers + switches:
+    for _hostname, ip, _site in routers + switches:
         ip = str(ip).strip()
         if ip and ip not in seen:
             seen.add(ip)
@@ -192,11 +193,67 @@ def _generate_legacy_ssh_config(routers, switches, output_dir):
     return config_path
 
 
+
+
+def _site_slug(site_name):
+    return str(site_name).strip().lower().replace(" ", "_")
+
+
+def _copy_ansible_config_trees(output_dir, bundle_dir):
+    """Flytt genererte Ansible-configtrær til prosjektets ansible_folder.
+
+    Router-/switchgeneratorene skriver først de Ansible-klare filene under
+    networkConfigs mens de kjører. Hovedscriptet flytter dem deretter inn i
+    ansible_folder, slik at all Ansible-data ender samlet på ett sted.
+    """
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    for dirname in ("ansibleConfigs", "ansibleBootstrapConfigs"):
+        source = output_dir / dirname
+        destination = bundle_dir / dirname
+        if not source.exists():
+            raise FileNotFoundError(f"Fant ikke generert Ansible-mappe: {source}")
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.move(str(source), str(destination))
+
+
+def _inventory_device_line(hostname, ip, site_name, bundle_dir):
+    """Build one host line using paths relative to inventory.ini.
+
+    This deliberately avoids absolute Windows/Linux paths.  The whole Ansible
+    bundle can therefore be copied between Windows, WSL and Linux unchanged.
+    """
+    site_slug = _site_slug(site_name)
+    full_rel = PurePosixPath("ansibleConfigs") / site_slug / f"{hostname}.cfg"
+    bootstrap_rel = (
+        PurePosixPath("ansibleBootstrapConfigs")
+        / site_slug
+        / f"{hostname}_SSH_SCP.cfg"
+    )
+
+    full_path = bundle_dir.joinpath(*full_rel.parts)
+    bootstrap_path = bundle_dir.joinpath(*bootstrap_rel.parts)
+    if not full_path.exists():
+        raise FileNotFoundError(f"Fant ikke Ansible-ready config for {hostname}: {full_path}")
+    if not bootstrap_path.exists():
+        raise FileNotFoundError(f"Fant ikke SSH/SCP-bootstrap for {hostname}: {bootstrap_path}")
+
+    return (
+        f'{hostname} ansible_host={ip} '
+        f'config_file="{full_rel.as_posix()}" '
+        f'bootstrap_config_file="{bootstrap_rel.as_posix()}"'
+    )
+
 def generate_ansible_inventory(output_dir, store_ini_in):
-    """Lag inventory.ini og eventuell legacy_ssh.cfg fra genererte router/switch-JSON-filer."""
+    """Create a self-contained, portable Ansible bundle.
+
+    All per-device config paths in inventory.ini are relative to inventory_dir,
+    so the bundle may be moved/copied without rewriting Windows/Linux paths.
+    """
     output_dir = Path(output_dir).resolve()
     store_ini_in = Path(store_ini_in).resolve()
     store_ini_in.mkdir(parents=True, exist_ok=True)
+    _copy_ansible_config_trees(output_dir, store_ini_in)
 
     router_json = output_dir / "EDGE_ROUTER_configs.json"
     switch_json = output_dir / "site_switch_config.json"
@@ -213,7 +270,7 @@ def generate_ansible_inventory(output_dir, store_ini_in):
     switches = _collect_switch_inventory(switch_data)
 
     # Oppdag duplikate hostnames før vi skriver en ugyldig inventory.
-    all_hosts = [hostname for hostname, _ in routers + switches]
+    all_hosts = [hostname for hostname, _ip, _site in routers + switches]
     duplicate_hosts = sorted({h for h in all_hosts if all_hosts.count(h) > 1})
     if duplicate_hosts:
         raise ValueError(
@@ -221,10 +278,16 @@ def generate_ansible_inventory(output_dir, store_ini_in):
         )
 
     lines = ["[cisco_routers]"]
-    lines.extend(f"{hostname} ansible_host={ip}" for hostname, ip in routers)
+    lines.extend(
+        _inventory_device_line(hostname, ip, site_name, store_ini_in)
+        for hostname, ip, site_name in routers
+    )
 
     lines.extend(["", "[cisco_switches]"])
-    lines.extend(f"{hostname} ansible_host={ip}" for hostname, ip in switches)
+    lines.extend(
+        _inventory_device_line(hostname, ip, site_name, store_ini_in)
+        for hostname, ip, site_name in switches
+    )
 
     lines.extend(
         [
@@ -251,7 +314,7 @@ def generate_ansible_inventory(output_dir, store_ini_in):
         legacy_ssh_path = _generate_legacy_ssh_config(routers, switches, store_ini_in)
         lines.extend(
             [
-                f"ansible_libssh_config_file={legacy_ssh_path}",
+                "ansible_libssh_config_file=\"{{ inventory_dir }}/legacy_ssh.cfg\"",
                 "ansible_libssh_key_exchange_algorithms=+diffie-hellman-group14-sha1",
                 "ansible_libssh_hostkeys=ssh-rsa",
             ]
@@ -263,17 +326,73 @@ def generate_ansible_inventory(output_dir, store_ini_in):
     inventory_path = store_ini_in / "inventory.ini"
     inventory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    deploy_path = store_ini_in / "deploy_generated.yml"
+    deploy_path.write_text(
+        "---\n"
+        "- name: Deploy generated Cisco configuration\n"
+        "  hosts: cisco\n"
+        "  gather_facts: false\n"
+        "  connection: ansible.netcommon.network_cli\n"
+        "  serial: 1\n\n"
+        "  tasks:\n"
+        "    - name: Apply generated configuration and save if changed\n"
+        "      cisco.ios.ios_config:\n"
+        "        src: \"{{ inventory_dir }}/{{ config_file }}\"\n"
+        "        backup: true\n"
+        "        save_when: modified\n",
+        encoding="utf-8",
+    )
+
+    readme_path = store_ini_in / "README_GENERATED_CONFIGS.txt"
+    readme_path.write_text(
+        "Generated Ansible files\n"
+        "=======================\n\n"
+        "This directory is a self-contained portable Ansible bundle.\n"
+        "The paths in inventory.ini are RELATIVE paths, not Windows/Linux absolute paths.\n"
+        "You can therefore copy the whole directory to the same or another host.\n\n"
+        "inventory.ini contains two per-device variables:\n"
+        "  config_file           = relative full Ansible-ready configuration\n"
+        "  bootstrap_config_file = relative console-paste MGMT + SSH/SCP bootstrap\n\n"
+        "Bootstrap is intended to make the device reachable by Ansible first.\n"
+        "It uses local VTY authentication and does not depend on TACACS/RADIUS.\n"
+        "After SSH works, a playbook can apply the full file with:\n\n"
+        "  cisco.ios.ios_config:\n"
+        "    src: '{{ inventory_dir }}/{{ config_file }}'\n"
+        "    backup: true\n"
+        "    save_when: modified\n\n"
+        "Important: ios_config src performs a merge. A command that disappears\n"
+        "from the generated file is not automatically negated on the device.\n",
+        encoding="utf-8",
+    )
+
     print(f"Ansible inventory generert: {inventory_path}")
+    print(f"Deploy-playbook generert: {deploy_path}")
+    print(f"Ansible config-veiledning generert: {readme_path}")
     return inventory_path
 
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("Bruk: python ultimate_config_script_site_router_and_switch.py <excel-fil>")
+        raise SystemExit(
+            "Bruk: python ultimate_config_script_site_router_and_switch.py <excel-fil>"
+        )
 
     excel_file = Path(sys.argv[1]).resolve()
     if not excel_file.exists():
         raise FileNotFoundError(f"Fant ikke Excel-filen: {excel_file}")
+
+    # Fast prosjektstruktur:
+    # NO_MPLS_SAD/
+    #   ansible_folder/
+    #   networkConfigs/
+    #   networkDevScripts/
+    #   ultimate_config_script_site_router_and_switch.py
+    #
+    # All Ansible-relatert output samles i den eksisterende ansible_folder.
+    ansible_bundle_dir = BASE_DIR / "ansible_folder"
+    ansible_bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Ansible-data lagres i prosjektmappen: {ansible_bundle_dir}")
 
     output_dir = BASE_DIR / "networkConfigs"
     output_dir.mkdir(exist_ok=True)
@@ -283,7 +402,7 @@ def main():
     try:
         create_edge_router_configs_main(excel_file)
         create_sw_configs_main(excel_file)
-        generate_ansible_inventory(output_dir, output_dir / "../../ansible_folder")
+        generate_ansible_inventory(output_dir, ansible_bundle_dir)
     finally:
         os.chdir(org_cwd)
 
