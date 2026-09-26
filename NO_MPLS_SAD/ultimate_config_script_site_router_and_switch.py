@@ -17,6 +17,9 @@ from site_SWITCH_script import create_sw_configs_main
 ANSIBLE_USER = "admin"
 ANSIBLE_PASSWORD = "bani"
 LEGACY_SSH = True  # Sett False dersom enhetene støtter moderne SSH-algoritmer.
+LEGACY_SSH_CONFIG_NAME = "legacy_ssh.cfg"
+LEGACY_SSH_CIPHERS = "+aes128-cbc"
+LEGACY_SSH_MACS = "+hmac-sha1"
 
 
 def _load_json(path):
@@ -156,8 +159,45 @@ def _collect_switch_inventory(switch_data):
     return switches
 
 
+def _generate_legacy_ssh_config(routers, switches, output_dir):
+    """Lag en OpenSSH-config som kun aktiverer legacy cipher/MAC for genererte Cisco-enheter."""
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_path = output_dir / LEGACY_SSH_CONFIG_NAME
+
+    # Behold samme rekkefølge som inventory, men fjern eventuelle duplikate IP-er.
+    device_ips = []
+    seen = set()
+    for _hostname, ip in routers + switches:
+        ip = str(ip).strip()
+        if ip and ip not in seen:
+            seen.add(ip)
+            device_ips.append(ip)
+
+    if not device_ips:
+        raise ValueError("Kan ikke generere legacy SSH-config uten Cisco management-IP-er.")
+
+    ssh_lines = [
+        "# Generated automatically by ultimate_config_script_site_router_and_switch.py",
+        "# Legacy SSH algorithms are enabled ONLY for the Cisco management IPs below.",
+        "",
+        f"Host {' '.join(device_ips)}",
+        f"    Ciphers {LEGACY_SSH_CIPHERS}",
+        f"    MACs {LEGACY_SSH_MACS}",
+        "",
+    ]
+
+    config_path.write_text("\n".join(ssh_lines), encoding="utf-8")
+    print(f"Legacy SSH-config generert: {config_path}")
+    return config_path
+
+
 def generate_ansible_inventory(output_dir, store_ini_in):
-    """Lag inventory.ini fra JSON-filene som router- og switchgeneratorene nettopp produserte."""
+    """Lag inventory.ini og eventuell legacy_ssh.cfg fra genererte router/switch-JSON-filer."""
+    output_dir = Path(output_dir).resolve()
+    store_ini_in = Path(store_ini_in).resolve()
+    store_ini_in.mkdir(parents=True, exist_ok=True)
+
     router_json = output_dir / "EDGE_ROUTER_configs.json"
     switch_json = output_dir / "site_switch_config.json"
 
@@ -203,14 +243,22 @@ def generate_ansible_inventory(output_dir, store_ini_in):
         ]
     )
 
+    legacy_ssh_path = store_ini_in / LEGACY_SSH_CONFIG_NAME
+
     if LEGACY_SSH:
-        # Nødvendig for de gamle IOS/CML-enhetene dere tester mot.
+        # OpenSSH-configen brukes til cipher/MAC som de gamle Cisco-enhetene krever.
+        # KEX/hostkey beholdes som libssh-variabler siden dette allerede fungerer i laben.
+        legacy_ssh_path = _generate_legacy_ssh_config(routers, switches, store_ini_in)
         lines.extend(
             [
+                f"ansible_libssh_config_file={legacy_ssh_path}",
                 "ansible_libssh_key_exchange_algorithms=+diffie-hellman-group14-sha1",
                 "ansible_libssh_hostkeys=ssh-rsa",
             ]
         )
+    elif legacy_ssh_path.exists():
+        # Unngå at en gammel legacy-config blir liggende igjen når funksjonen skrus av.
+        legacy_ssh_path.unlink()
 
     inventory_path = store_ini_in / "inventory.ini"
     inventory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
