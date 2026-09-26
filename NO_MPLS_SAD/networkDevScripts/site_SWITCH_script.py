@@ -1774,6 +1774,10 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
             first_downlink_channel = 1
 
         # DOWNLINKS:
+        # Inter-switch links are trusted for both DHCP snooping and DAI in both
+        # directions. Client/access ports remain untrusted by default. This is
+        # required because infrastructure devices can use static IP addresses and
+        # therefore have no DHCP-snooping binding for DAI validation.
         # Channel-group numbers are local. SW1 starts with Po1. On downstream
         # switches Po1 is reserved for the uplink, so their downlinks start at Po2.
         if plan["downlink_is_etherchannel"]:
@@ -1783,14 +1787,14 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     switch_link_vlans,
                     f"description DOWNLINK EtherChannel member(s) - Port-channel{channel_id}",
                     channel_group=channel_id,
-                    trusted=False,
+                    trusted=True,
                     trunk_encapsulation=trunk_encapsulation,
                 )
                 sw_cfg[f"interface Port-channel{channel_id}"] = _trunk_config(
                     switch_link_vlans,
                     f"description DOWNLINK Port-channel{channel_id} for VLAN "
                     f"{','.join(map(str, switch_link_vlans))}",
-                    trusted=False,
+                    trusted=True,
                     stp_guard="root",
                     trunk_encapsulation=trunk_encapsulation,
                 )
@@ -1800,7 +1804,7 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
                     switch_link_vlans,
                     f"description DOWNLINK trunk {idx} for VLAN "
                     f"{','.join(map(str, switch_link_vlans))}",
-                    trusted=False,
+                    trusted=True,
                     stp_guard="root",
                     trunk_encapsulation=trunk_encapsulation,
                 )
