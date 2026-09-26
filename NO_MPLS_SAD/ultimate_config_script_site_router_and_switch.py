@@ -14,7 +14,8 @@ from site_SWITCH_script import create_sw_configs_main
 
 # Ansible inventory-innstillinger.
 # Passord legges med vilje ikke i inventory-filen. Bruk f.eks. Ansible Vault.
-ANSIBLE_USER = "lan-admin"
+ANSIBLE_USER = "admin"
+ANSIBLE_PASSWORD = "bani"
 LEGACY_SSH = True  # Sett False dersom enhetene støtter moderne SSH-algoritmer.
 
 
@@ -196,6 +197,7 @@ def generate_ansible_inventory(output_dir, store_ini_in):
             "ansible_connection=ansible.netcommon.network_cli",
             "ansible_network_os=cisco.ios.ios",
             f"ansible_user={ANSIBLE_USER}",
+            f"ansible_password={ANSIBLE_PASSWORD}",
             "ansible_network_cli_ssh_type=libssh",
             "ansible_host_key_checking=False",
         ]
