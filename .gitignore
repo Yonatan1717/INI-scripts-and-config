@@ -8,3 +8,6 @@ networkConfigs/
 **/main.to*
 **/main copy*
 test/*
+**/ansibleB*/*
+**/ansibleC*/*
+**/init_config_swi*/*

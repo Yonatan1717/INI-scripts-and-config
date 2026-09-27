@@ -9,6 +9,9 @@ inventory.ini contains two per-device variables:
   config_file           = relative full Ansible-ready configuration
   bootstrap_config_file = relative console-paste MGMT + SSH/SCP bootstrap
 
+init_config_switch/ contains the temporary staging-switch configs, port map,
+and control-node temporary MGMT IP instructions used before Ansible deploy.
+
 Bootstrap is intended to make the device reachable by Ansible first.
 It uses local VTY authentication and does not depend on TACACS/RADIUS.
 After SSH works, a playbook can apply the full file with:
