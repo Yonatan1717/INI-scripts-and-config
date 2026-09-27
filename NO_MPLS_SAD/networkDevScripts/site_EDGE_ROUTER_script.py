@@ -667,7 +667,17 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
                 f"{', '.join(sorted(known_vrfs))}"
             )
 
+    # Build ACL definitions separately from the live interface bindings.
+    #
+    # This is important for Ansible/SSH deployment: if an inbound ACL is bound
+    # to the MGMT interface before the ACL has been fully populated, IOS applies
+    # the implicit deny immediately. That can terminate the SSH session that is
+    # currently pushing the configuration. We therefore render every FLOW ACL
+    # before the first interface to which any of them is attached.
     flow_info = {}
+    acl_definitions = {}
+    acl_bound_interface_keys = []
+
     for source in policy["source"].tolist():
         source_vrf = _normalise_cell_text(source).upper()
         if not source_vrf or source_vrf not in local_vrfs or source_vrf in flow_info:
@@ -787,7 +797,10 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
             continue
 
         acl_lines.extend(["deny ip any any log", "exit"])
-        config[f"ip access-list extended {acl_name}"] = acl_lines
+        # Do not insert the ACL into the main config dict yet. The interface
+        # blocks already exist earlier in insertion order, so inserting it here
+        # would render `ip access-group ... in` before the ACL is complete.
+        acl_definitions[f"ip access-list extended {acl_name}"] = acl_lines
 
         bound_interfaces = []
         for interface_key in _interface_keys_for_vrf(ip_data, intf_prefix, source_vrf):
@@ -796,6 +809,8 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
                     f"Kunne ikke binde {acl_name}: finner ikke {interface_key} i generert config"
                 )
             _insert_before_exit(config[interface_key], f"ip access-group {acl_name} in")
+            if interface_key not in acl_bound_interface_keys:
+                acl_bound_interface_keys.append(interface_key)
             bound_interfaces.append(interface_key.removeprefix("interface "))
 
         flow_info[source_vrf] = {
@@ -804,6 +819,28 @@ def apply_flow_policy(config, network_info, ip_data, intf_prefix, policy, contex
             "rules": len(acl_lines) - 2,
             "default": "deny ip any any log",
         }
+
+    # Preserve the rest of the generated configuration order, but place all
+    # FLOW ACL definitions immediately before the earliest interface that uses
+    # one of them. This guarantees the ACL is complete before IOS receives
+    # `ip access-group ... in`, including on the MGMT interface carrying Ansible.
+    if acl_definitions:
+        current_items = list(config.items())
+        bound_key_set = set(acl_bound_interface_keys)
+        reordered = {}
+        inserted = False
+
+        for key, value in current_items:
+            if not inserted and key in bound_key_set:
+                reordered.update(acl_definitions)
+                inserted = True
+            reordered[key] = value
+
+        if not inserted:
+            reordered.update(acl_definitions)
+
+        config.clear()
+        config.update(reordered)
 
     if flow_info:
         network_info["flow_policy"] = flow_info

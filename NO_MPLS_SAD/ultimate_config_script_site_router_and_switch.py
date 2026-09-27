@@ -633,10 +633,33 @@ def generate_ansible_inventory(output_dir, store_ini_in):
         # Unngå at en gammel legacy-config blir liggende igjen når funksjonen skrus av.
         legacy_ssh_path.unlink()
 
+
     inventory_path = store_ini_in / "inventory.ini"
     inventory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     deploy_path = store_ini_in / "deploy_generated.yml"
+
+
+    # ---
+    # - name: Deploy generated Cisco configuration
+    # hosts: cisco
+    # gather_facts: false
+    # connection: ansible.netcommon.network_cli
+    # serial: 1
+
+    # tasks:
+    #     - name: Deploy device
+    #     block:
+    #         - name: Apply generated configuration and save if changed
+    #         cisco.ios.ios_config:
+    #             src: "{{ inventory_dir }}/{{ config_file }}"
+    #             backup: true
+    #             save_when: modified
+
+    #     rescue:
+    #         - name: Report failed device
+    #         ansible.builtin.debug:
+    #             msg: "Deploy feilet på {{ inventory_hostname }}. Fortsetter til neste enhet."
     deploy_path.write_text(
         "---\n"
         "- name: Deploy generated Cisco configuration\n"
@@ -645,11 +668,17 @@ def generate_ansible_inventory(output_dir, store_ini_in):
         "  connection: ansible.netcommon.network_cli\n"
         "  serial: 1\n\n"
         "  tasks:\n"
-        "    - name: Apply generated configuration and save if changed\n"
-        "      cisco.ios.ios_config:\n"
-        "        src: \"{{ inventory_dir }}/{{ config_file }}\"\n"
-        "        backup: true\n"
-        "        save_when: modified\n",
+        "    - name: Deploy device\n"
+        "      block:\n"
+        "        - name: Apply generated configuration and save if changed\n"
+        "          cisco.ios.ios_config:\n"
+        "            src: \"{{ inventory_dir }}/{{ config_file }}\"\n"
+        "            backup: true\n"
+        "            save_when: modified\n"
+        "      rescue:\n"
+        "        - name: Report failed device\n"
+        "          ansible.builtin.debug:\n"
+        "            msg: \"Deploy feilet på {{ inventory_hostname }}. Fortsetter til neste enhet.\"\n",
         encoding="utf-8",
     )
 

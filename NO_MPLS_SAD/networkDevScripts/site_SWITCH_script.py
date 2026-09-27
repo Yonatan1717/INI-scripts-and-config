@@ -1289,10 +1289,6 @@ def _mgmt_access_port_config(description, mgmt_vlan):
         "ip arp inspection trust",
         "switchport mode access",
         f"switchport access vlan {mgmt_vlan}",
-        "switchport port-security",
-        "switchport port-security maximum 2",
-        "switchport port-security violation restrict",
-        "spanning-tree bpduguard enable",
         "spanning-tree portfast",
         "no shutdown",
         "exit",
@@ -1811,14 +1807,14 @@ def config_trunk_and_dchp_snooping(swi_data, site, md, md_top, ip_data, vrf_data
 
         # New num_ports_tot model: skipped ports are real physical interfaces,
         # so explicitly blackhole/shut them instead of leaving them in VLAN 1.
-        if plan["skipped_physical_ports"]:
-            sw_cfg[_interface_key(intf_prefix, plan["skipped_physical_ports"])] = [
-                "description UBRUKT - SKIPPED/RESERVED",
-                "switchport mode access",
-                "switchport access vlan 999",
-                "shutdown",
-                "exit",
-            ]
+        # if plan["skipped_physical_ports"]:
+        #     sw_cfg[_interface_key(intf_prefix, plan["skipped_physical_ports"])] = [
+        #         "description UBRUKT - SKIPPED/RESERVED",
+        #         "switchport mode access",
+        #         "switchport access vlan 999",
+        #         "shutdown",
+        #         "exit",
+        #     ]
 
         # Remaining unassigned access slots are blackholed and shut down.
         unused_start = plan["first_access_port"] + plan["allocated_access_ports"]
