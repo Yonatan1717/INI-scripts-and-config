@@ -472,7 +472,7 @@ def _generate_init_switch_bundle(routers, switches, bundle_dir):
     suggestions = _suggest_control_node_addresses(routers, switches)
 
     shell_lines = [
-        "#!/usr/bin/env bash",
+        "#!/usr/bin/bash",
         "# Midlertidige adresser for Ansible-control-node under staging.",
         "# BYTT <ANSIBLE_NIC> med riktig interface, f.eks. ens160.",
         "# Kontroller at foreslåtte adresser er ledige før de tas i bruk.",
