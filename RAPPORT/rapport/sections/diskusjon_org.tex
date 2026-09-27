@@ -1,0 +1,71 @@
+\section{Diskusjon}
+
+Designet ble utviklet for å redusere risikoen i det eksisterende flate nettet uten å endre forbindelsene levert av det litauiske forsvaret eller kreve større nyanskaffelser. Diskusjonen vurderer derfor ikke bare om de valgte mekanismene fungerer teknisk, men også hvilke avhengigheter, begrensninger og driftsmessige konsekvenser de innfører. Testmatrisen viser at hovedfunksjonene i løsningen er verifisert i labmiljøet, samtidig som enkelte forhold fortsatt må vurderes mot endelig produksjonsutstyr og operativ bruk. Test matrisen er vedlagt som vedlegg \textcolor{red}{\ref{sec:vedlegg-testmatrise}}.
+
+\subsection{Ruting, utstyr og adresseplan}
+
+Kombinasjonen av VLAN, VRF-Lite og separate DMVPN-overlay gir en tydelig segmentering fra klientporten og videre mellom lokasjonene. Dette er en vesentlig forbedring sammenlignet med det opprinnelige flate nettet, fordi en feil eller kompromittering i ett tjenestenett ikke automatisk gir samme kommunikasjonsmulighet mot de øvrige tjenestene. Testmatrisen viser at VRF-tilhørighet, underlay-ruting, EIGRP over tunnelene, DMVPN Phase 3 og ruting ved brudd fungerte som forventet i testmiljøet.
+
+DMVPN Phase 3 er spesielt relevant fordi kontrollplanet fortsatt kan være sentralisert rundt BNHQ, samtidig som dataplanet kan opprette direkte spoke-to-spoke-forbindelser. Dette reduserer unødvendig trafikk gjennom hubben og gjør arkitekturen mer skalerbar enn en løsning der hvert nytt site krever egne statiske tunneler mot alle andre sites. Løsningen er også tilpasset rammebetingelsen om at leverandørens lag-3-VPN ikke skal rekonfigureres, siden dette kun brukes som transport for overlayet.
+
+Adresseplanen med \texttt{10.X.Y.0/24} gir en operativ fordel ved at både site og tjeneste kan leses direkte fra adressen. Ulempen er at /24-nett benyttes også der det faktiske behovet kan være langt mindre. Det gir en mindre effektiv adresseutnyttelse, men innenfor det private adresseområdet er dette vurdert som mindre viktig enn enkel feilsøking, dokumentasjon og standardisering. En fast modell reduserer også risikoen for at senere kontingenter etablerer ulike adresseprinsipper på forskjellige sites.
+
+Valget om å basere løsningen på eksisterende Cisco-utstyr reduserer behovet for nyanskaffelser, men introduserer samtidig en kompatibilitetsutfordring. Testmatrisen markerer IOS-kompatibilitet som delvis verifisert. Generatoren er derfor bygget med flere syntaks-valg, slik at samme logiske design kan tilpasses eldre og nyere plattformer, men dette forutsetter at gitt IOS-versjon støtter de valgte mekanismene.
+
+\subsection{Kryptering og sikkerhet}
+
+Sikkerheten bygger på flere uavhengige lag i stedet for en enkelt mekanisme. VRF-Lite begrenser ruting mellom tjenestenettene, mens \texttt{FLOW\_POLICY} og genererte ACL-er definerer hvilke forbindelser som faktisk skal tillates. Testmatrisen viser at ACL-tilknytning, blokkert trafikk og nødvendige infrastrukturtjenester fungerte med filtrering aktiv. Dette er viktig fordi segmentering alene ikke er tilstrekkelig dersom det samtidig finnes ukontrollerte rutingsveier mellom segmentene.
+
+IPsec er lagt på de DMVPN-overlayene som har krav til konfidensialitet og integritet. Testene av IKE/IPsec-profiler, sikkerhetsassosiasjoner og tunneltrafikk viste at trafikk med krypteringskrav ble beskyttet som planlagt. Dette er særlig relevant fordi transportnettet mellom lokasjonene ikke forvaltes av eFP. Krypteringen gjør dermed sikkerheten i de beskyttede overlayene mindre avhengig av tillit til underliggende transport.
+
+På lag 2 er DHCP Snooping, Dynamic ARP Inspection, IP Source Guard og STP-beskyttelse brukt for å redusere risikoen fra uautoriserte eller feilkonfigurerte klienter. Dette adresserer blant annet problemet med private DHCP-servere som tidligere kunne påvirke nettet. Testene viste at uautoriserte DHCP-svar ble blokkert, og at DAI og IP Source Guard stoppet ugyldig ARP- og kildeadressebruk. STP-mekanismene ble også testet med forventet resultat.
+
+Sikkerhetsmekanismene må likevel sees i sammenheng. For eksempel er inter-switch-forbindelser trusted for DHCP Snooping og DAI for å unngå at legitim infrastrukturtrafikk stoppes. Det betyr at feil klassifisering av en port som trusted kan få større konsekvenser enn på en vanlig klientport. Standardisert konfigurasjonsgenerering reduserer denne risikoen, men erstatter ikke behovet for kontroll av fysisk kabling og portroller.
+
+\subsection{Tilgangskontroll og autonomi}
+
+Sentral AAA med TACACS+ gir bedre kontroll over hvem som kan administrere nettverksenhetene, samtidig som accounting gjør administrativ aktivitet sporbar. Testmatrisen viser at gyldige og ugyldige brukere, tilgangsnivå, accounting og reservetilgang ble testet med forventet resultat. Lokal reservetilgang fungerer ved bortfall av TACACS+-serveren, men omgår ikke en eksplisitt avvisning fra en tilgjengelig server. Dette er ønskelig fordi en deaktivert konto ellers kunne fått tilgang gjennom fallback-mekanismen.
+
+For klienttilgang brukes IEEE 802.1X med RADIUS på valgte porter. Testene viser at godkjente klienter fikk tilgang, feil legitimasjon ble avvist, og serverbortfall ikke ga utilsiktet ny tilgang. 802.1X ble også testet sammen med DHCP Snooping, DAI og IP Source Guard. Dette er viktig fordi en sikkerhetsmekanisme som fungerer isolert ikke nødvendigvis fungerer når flere mekanismer aktiveres samtidig.
+
+Sentraliseringen gir likevel en avhengighet til tjenestene på BNHQ. Dersom TACACS+ eller RADIUS blir utilgjengelig, må oppførselen være forutsigbar og dokumentert. TACACS+ har lokal fallback for administrasjon, mens klienttilgang ved RADIUS-bortfall er mer restriktiv. Dette gir en hensiktsmessig balanse mellom sentral kontroll og lokal autonomi: administrasjon kan fortsatt gjennomføres ved serverbortfall, samtidig som fravær av RADIUS ikke automatisk åpner nettverket for nye klienter.
+
+Den samme problemstillingen gjelder utrulling. Ansible gjør det mulig å standardisere konfigurasjon og redusere manuelt arbeid, men en helt ukonfigurert enhet er ikke tilgjengelig for Ansible. Det er derfor laget en egen grunnkonfigurasjon for SSH/SCP og en midlertidig konfigurasjonssvitsj for staging. Dette gjør førstegangsoppsettet mindre avhengig av at produksjonsruting allerede er på plass, og gjør utrullingen mer repeterbar.
+
+\subsection{Redundans og skalerbarhet}
+
+EtherChannel mellom svitsjene gir toleranse for feil i en fysisk forbindelse, og dette ble verifisert ved å koble fra enkeltmedlemmer og deretter hele kanalen. Ved enkeltbrudd fortsatte trafikken, mens komplett brudd ble oppdaget og forbindelsen kunne gjenopprettes. Dette gir bedre lokal tilgjengelighet uten behov for nytt rutingsutstyr.
+
+DMVPN Phase 3 gir skalerbarhet mellom sites, men BNHQ beholder en sentral rolle for blant annet NHRP, Internett, administrasjon og overvåkning. Selv om spoke-to-spoke-trafikk kan gå direkte etter at en shortcut er etablert, vil bortfall av BNHQ fortsatt påvirke sentrale tjenester og etablering av ny kontrollplaninformasjon. Løsningen har derfor ikke full redundans bare fordi dataplanet kan bli direkte.
+
+Det samme gjelder sentraliserte tjenester som TACACS+, RADIUS, syslog, NTP og overvåkning. Sentralisering gjør drift og kontroll enklere, men samler også flere funksjoner på ett sted. Innenfor prosjektets ramme om å unngå større nyanskaffelser er dette et akseptabelt kompromiss, men dersom kravene til tilgjengelighet økes senere bør redundante servere, alternativ hub eller reserveforbindelser vurderes.
+
+QoS er brukt for å beskytte viktige tjenester ved belastning. Testmatrisen viser at policyplassering, DSCP-merking, klassifisering gjennom GRE/IPsec og båndbreddefordeling ble testet med forventet resultat. Likevel er QoS ingen erstatning for tilstrekkelig kapasitet. Mekanismen bestemmer primært hvordan knapp kapasitet fordeles, og den faktiske brukeropplevelsen vil fortsatt avhenge av tilgjengelig WAN-båndbredde og trafikkmønster.
+
+\subsection{Sikkerhetsovervåkning, logging og arkitektur}
+
+Sentral syslog, SNMPv3 og trafikkspeiling gir bedre synlighet enn i det opprinnelige nettet. Logging og SNMPv3 ble verifisert i test, og testmatrisen viser også at lokal trafikkspeiling og overvåkningsdekning fungerte for den testede løsningen. Et felles tidsgrunnlag gjennom NTP gjør det enklere å korrelere hendelser mellom nettverksenheter og overvåkningssystemer.
+
+ERSPAN inngår i sluttdesignet fordi det gjør det mulig å transportere speilet trafikk fra spoke-sites til den sentrale overvåkningsløsningen over et rutet nett. ERSPAN kunne imidlertid ikke testes ende-til-ende i laben fordi tilgjengelig svitsjutstyr ikke støttet funksjonen. Dette betyr at ERSPAN-delen av sluttdesignet må verifiseres på det faktiske utstyret før produksjonssetting. Manglende labstøtte betyr ikke at resten av overvåkningsdesignet er uprøvd. Lokal SPAN og den generelle speilingslogikken ble testet.
+
+Konfigurasjonsgeneratoren støtter SPAN, RSPAN og ERSPAN. Trafikkspeilingen er derfor ikke låst til en bestemt metode. Dersom produksjonsutstyret ikke støtter ERSPAN, eller dersom topologien gjør ERSPAN uhensiktsmessig, kan overvåkningsdelen tilpasses uten at hele nettverksdesignet må bygges om. Lokal SPAN er egnet når sensor og trafikkilde befinner seg på samme svitsj, mens RSPAN kan benyttes når speilet trafikk skal transporteres gjennom et sammenhengende lag-2-domene. ERSPAN er mest relevant når speilet trafikk må krysse rutede forbindelser mellom sites.
+
+Denne fleksibiliteten reduserer konsekvensen av plattformavhengigheter, men valgt speilingsmetode må fortsatt vurderes mot kapasitet, duplikater og blindsoner. Trafikkspeiling er dessuten passiv. Den øker evnen til å oppdage hendelser, men blokkerer ikke i seg selv skadelig trafikk. Overvåkning må derfor sees som et supplement til segmentering, ACL-er og tilgangskontroll.
+
+\subsection{Ikke-tekniske aspekter}
+
+Flere av risikoene som ble identifisert ved HO/TO kan ikke løses gjennom nettverkskonfigurasjon alene. Et deaktivert nettverksuttak gir liten verdi dersom en bruker kan flytte kabelen til et annet ubeskyttet uttak, og segmentering beskytter ikke mot at en kompromittert Internett-klient fysisk befinner seg i et rom hvor sensitiv aktivitet kan observeres eller tas opp. Fysisk plassering av klienter og nettverksutstyr må derfor inngå i den totale sikkerhetsvurderingen.
+
+Den nye løsningen innfører også flere driftsoppgaver enn det opprinnelige flate nettet. AAA-servere, RADIUS, logging, NTP, overvåkning, sertifikater, brukerkontoer og Ansible må forvaltes. Samtidig reduserer standardiseringen manuelt konfigurasjonsarbeid, og sentrale tjenester gjør endringer og feilsøking mer konsistent. Om den totale ressursbruken faktisk blir lavere eller uendret må derfor vurderes over tid og ikke bare ut fra installasjonsfasen.
+
+Konfigurasjonsgeneratoren er viktig i denne sammenhengen. Testmatrisen viser at generering fra gyldig Excel-grunnlag og håndtering av ugyldige verdier ble testet med forventet resultat. Dette gir et mer kontrollert utgangspunkt for endringer og reduserer risikoen for lokale konfigurasjonsavvik. Samtidig må Excel-grunnlaget behandles som en viktig del av konfigurasjonsforvaltningen, fordi feil i datagrunnlaget kan bli reprodusert på flere enheter dersom kontrollen før utrulling er utilstrekkelig.
+
+Dokumentasjon, sikkerhetskopi og gjenoppretting er derfor en del av sikkerhetsdesignet og ikke bare administrative tillegg. Utrulling, sikkerhetskopiering og gjenoppretting ble gjennomgått i testmatrisen. Dette støtter målet om at senere kontingenter skal kunne overta nettverket uten å være avhengige av detaljkunnskapen til personene som bygget løsningen.
+
+\subsection{Test og verifikasjon}
+
+Testingen gir samlet sett god støtte for at den valgte arkitekturen fungerer etter hensikten i labmiljøet. VLAN, trunker, EtherChannel, STP, DHCP Snooping, DAI, IP Source Guard, VRF, OSPF, EIGRP, NAT/PAT, ACL, DMVPN, IPsec, DHCP/DNS, NTP, SSH, TACACS+, 802.1X/RADIUS, logging, SNMPv3, lokal trafikkspeiling, QoS, konfigurasjonsgenerator og prosessen for utrulling/sikkerhetskopi/gjenoppretting er dokumentert med beståtte testpunkter i matrisen.
+
+Det er likevel viktig å skille mellom at en funksjon er demonstrert i laben og at hele produksjonsløsningen dermed er ferdig verifisert. Labutstyret er ikke identisk med alt utstyret som kan benyttes i endelig løsning, og testmatrisen markerer IOS-kompatibilitet som delvis verifisert. ERSPAN kunne heller ikke testes på tilgjengelig maskinvare og må verifiseres på utstyr med ERSPAN-støtte. Dersom ERSPAN ikke kan eller bør benyttes i sluttmiljøet, kan generatorens støtte for SPAN og RSPAN brukes til å tilpasse overvåkningsarkitekturen.
+
+Før produksjonssetting bør det i tillegg gjennomføres en siste ende-til-ende-test på det faktiske utstyret og den faktiske transportforbindelsen. Denne bør særlig bekrefte plattformkompatibilitet, ERSPAN eller valgt alternativ speilingsmetode, MTU gjennom GRE/IPsec, oppførsel ved bortfall av sentrale tjenester og at nødvendige tjenesteflyter er korrekt representert i \texttt{FLOW\_POLICY}. Resultatet bør brukes som grunnlag for S6 sin aksept av operativ risiko før endringene settes i produksjon.
