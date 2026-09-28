@@ -5,12 +5,11 @@
 \begingroup
 \captionsetup[table]{justification=centering,singlelinecheck=false}
 \section{Design}
-Designarbeidet tok utgangspunkt i nettverket S6-seksjonen overtok ved HO/TO. Nettverket var flatt, kontrollen over tilkoblede enheter var begrenset, og det manglet både fjernadministrasjon og sentral overvåkning. Den nye løsningen skulle videreføre UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd, men samtidig gi S6 bedre kontroll med administrasjon, overvåkning og gjenoppretting.
-
-Kapitlet beskriver rammebetingelsene og kravene som styrte designet, og forklarer hvorfor de ulike løsningene ble tatt i bruk. Det skilles mellom selve designvalgene, forutsetninger som må være på plass før produksjonssetting, og forhold som må verifiseres gjennom testing. At en mekanisme er inkludert i designet, betyr derfor ikke i seg selv at det tilhørende kravet er oppfylt.
+Designet skal gi S6 kontroll med segmentering, tilgang, administrasjon og overvåkning, samtidig som UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd videreføres. Kapitlet beskriver valgene og forutsetningene; kravoppfyllelse må dokumenteres gjennom testing.
 
 \subsection{Utgangspunkt og rammebetingelser}
-Stabssjefen fastsatte, i samråd med S6, følgende rammebetingelser for rekonfigurasjonen. De styrte designarbeidet og ble brukt som føringer når ulike tekniske alternativer måtte vurderes opp mot hverandre:
+Stabssjefen fastsatte følgende rammebetingelser i samråd med S6:
+
 \begingroup
 \small
 \setlength{\tabcolsep}{4pt}
@@ -46,9 +45,7 @@ F6 & Godkjenning & Ingen endringer skal gjøres i produksjonsnettet før S6 har 
 \endgroup
 
 \subsection{Designkrav}
-Tabell \ref{tab:designkrav} viser kravene som ble utledet fra svakhetene som kom fram ved HO/TO, sammen med behovet for sikker drift og gjenoppretting. Kravene beskriver hva løsningen skal oppnå, de tekniske og administrative tiltakene er virkemidlene som skal bidra til dette.
-
-Krav som hadde størst betydning for sikkerhet og operativ funksjon fikk prioritet H, mens støttende krav til forvaltning og gjenoppretting fikk prioritet M. Tabellen er sortert med H-kravene først. Prioriteringen følger rammebetingelsene F1--F6. Dersom et krav ikke var dokumentert oppfylt, ble det stående som et uavklart forhold eller som gjenstående risiko.
+Tabell \ref{tab:designkrav} knytter avdekkede svakheter og driftsbehov til prioriterte krav. Krav med størst betydning for sikkerhet og operativ funksjon har prioritet H; støttende forvaltningskrav har prioritet M. Prioriteringen følger F1--F6.
 
 \begingroup
 \small
@@ -88,17 +85,13 @@ K8 & Konfigurasjoner skal dokumenteres, kontrolleres og kunne gjenopprettes til 
 \end{longtable}
 \endgroup
 
-Krav-ID-ene ga sporbarhet mellom behov og designvalg og dannet grunnlaget for verifikasjon. For K6 var tjenestespesifikke akseptkriterier en forutsetning for å vurdere resultatene fra belastnings- og feiltester. Kravoppfyllelse måtte underbygges med dokumenterte resultater.
+Krav-ID-ene gir sporbarhet mellom behov, design og verifikasjon. For K6 må tjenestespesifikke akseptkriterier avklares før belastnings- og feiltester kan dokumentere kravoppfyllelse.
 
 \subsection{IP-adresseringsplan}
-Adresseplanen gir tjenestenettene en fast og gjenkjennelig struktur på tvers av lokasjoner, og støtter dermed segmenteringen i K1. Samme navngivning og dokumentasjonsmodell brukes overalt for å gjøre drift og overlevering enklere, i tråd med K8 og F5.
+Adresseplanen støtter segmentering (K1) og bruker en felles struktur for drift og overlevering (K8, F5).
 
 \subsubsection{Lokal nettverksplan}
-Tabell \ref{tab:ipplan-site-x} viser adresseplanen for det lokale nettet på lokasjon X. Den samme strukturen brukes på alle lokasjoner, slik at adresseringen blir forutsigbar og enkel å kjenne igjen.
-
-Det lokale adresseområdet er \texttt{10.0.0.0/8}. Andre oktett angir lokasjon, mens tredje oktett angir tjenestenett. MGMT-nettet på lokasjon 1 blir derfor \texttt{10.1.10.0/24}, mens det tilsvarende nettet på lokasjon 2 blir \texttt{10.2.10.0/24}.
-
-Denne oppbygningen gjør det mulig å lese både lokasjon og tjeneste direkte ut fra IP-adressen, samtidig som samme modell kan gjenbrukes når nye lokasjoner legges til.
+Tjenestenettene følger modellen \texttt{10.X.Y.0/24}, der X angir lokasjon og Y tjenestenett (Tabell \ref{tab:ipplan-site-x}). Samme struktur brukes ved utvidelse med nye lokasjoner.
 
 \begin{table}[H]
     \centering
@@ -135,15 +128,7 @@ Denne oppbygningen gjør det mulig å lese både lokasjon og tjeneste direkte ut
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Kolonnen \textbf{Res.} angir hvor mange adresser som reserveres utenfor den dynamiske adressepoolen. Dette er spesielt relevant i MGMT- og MONITORING-nettene, hvor nettverksenheter og overvåkningskomponenter benytter faste adresser.
-
-Et /24-nett inneholder 254 brukbare host-adresser. Dersom 40 adresser reserveres, gjenstår:
-\[
-    A_{\text{ledige}} = 254 - 40 = 214
-\]
-adresser til øvrig bruk.
-
-Andre oktett brukes som lokasjonsidentifikator. Dersom lokasjons-ID 0 reserveres, kan den lokale adresseplanen benytte ID 1--255. I tunnelplanen \texttt{172.16.<tjeneste>.X/24} må X derimot ligge mellom 1 og 254, siden .255 er broadcast-adressen. Tredje oktett identifiserer tjenestenettet og følger samme nummerering på alle lokasjoner.
+\textbf{Res.} angir adresser utenfor DHCP-poolen; MGMT og MONITORING reserverer 40 til statisk adressering. Lokasjons-ID X begrenses til 1--254 i den felles modellen fordi .255 er broadcast i DMVPN-nettene \texttt{172.16.<tjeneste>.X/24}.
 
 \subsubsection{Loopback- og DMVPN-plan}
 Tabellene \ref{tab:loopback-site-x} og \ref{tab:dmvpn-site-x} viser hvordan segmenteringen videreføres mellom lokasjonene, og hvilke overlay som beskyttes med IPsec. Dette knytter adresse- og tunnelplanen direkte til K1 og K2.
@@ -221,19 +206,8 @@ Separasjonen forenklet også administrasjon og feilsøking.
 \end{table}
 
 \subsubsection{QoS}
-QoS skal bidra til at viktige tjenester fortsatt får kapasitet når WAN-forbindelsen er belastet, og støtter dermed K6 og F2. Tabell \ref{tab:qos-site-x} viser vektingen mellom trafikkklassene. Vektingen angir ønsket prioritering, men faktisk kapasitet må fortsatt dokumenteres gjennom belastningstester.
+QoS prioriterer operative tjenester ved WAN-belastning (K6, F2). Generatoren klassifiserer trafikk etter tjenestenett/VLAN og merker den med DSCP. Klassenes minimumsandeler fordeles etter vektene i Tabell \ref{tab:qos-site-x} og summerer til 75~\%. De resterende 25~\% er ikke eksplisitt reservert til \texttt{class-default}. Beregnings- og avrundingsmetoden er beskrevet i vedlegg \ref{sec:vedlegg-qos}. Faktisk effekt må dokumenteres gjennom belastningstester.
 
-Tjenester med størst operativ betydning får derfor en definert minimumsandel av kapasiteten når WAN-forbindelsen er belastet.
-
-Trafikken klassifiseres etter tjenestenett og merkes med DSCP. Til sammen fordeles 75~\% mellom de definerte trafikkklassene. De resterende 25~\% blir ikke eksplisitt reservert til \texttt{class-default} av generatoren.
-
-For en trafikkklasse $i$ beregnes minimum båndbreddeandel som:
-\[
-    B_i =
-    \frac{P_i}{P_t}
-    \cdot 75\%, \quad \text{hvor } P_t = \sum_i P_i
-\]
-Her er $P_i$ klassens prioriteringsvekt, $P_t$ summen av vektene og $B_i$ den beregnede båndbreddeandelen. Generatoren avrunder først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest, ved lik rest prioriteres høyere vekt. Dermed summerer de tildelte andelene til 75 prosent.
 \begin{table}[H]
     \centering
     \caption{QoS-vekting og båndbreddefordeling for lokasjon X.}
@@ -261,12 +235,10 @@ Her er $P_i$ klassens prioriteringsvekt, $P_t$ summen av vektene og $B_i$ den be
     \rowcolors{1}{}{}
 \end{table}
 \noindent
-Fordelingen favoriserer operative tjenester og overvåkning når forbindelsen er presset. Generatoren bruker VLAN som grunnlag for klassifisering og DSCP for plassering i køklasser. Velferds- og Internett-trafikk får lavere prioritet fordi redusert ytelse der har mindre operativ konsekvens.
+Operative tjenester og overvåkning prioriteres over velferds- og Internett-trafikk, der redusert ytelse har mindre operativ konsekvens.
 
 \subsection{Fysisk design}
 Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas der det er mulig (K6). Fysisk sikring og kontroll med nettverksuttak må håndteres i tillegg (K7).
-
-Det fysiske designet viser hvordan rutere, svitsjer, servere og endepunkter kobles sammen på hver lokasjon.
 
 Hver lokasjon består av en lokasjonsruter, en distribusjonssvitsj og en eller flere aksessvitsjer. De lokale VLAN-ene transporteres frem til ruteren, som fungerer som lag-3-grense mellom tjenestenettene og DMVPN-overlayene.
 
@@ -280,15 +252,8 @@ Der portkapasiteten tillater det, brukes EtherChannel mellom svitsjene. Det gir 
 \end{figure}
 
 \subsection{DMVPN Phase 3-arkitektur}
-Figur \ref{fig:logisk_arkitektur_dmvpn} viser hvordan tjenestene og segmenteringen videreføres mellom bygg uten å kreve endringer i leverandørens transportnett. Arkitekturen ivaretar dermed F2, K1 og rammebetingelsen i F4.
+BNHQ på lokasjon 1 er DMVPN Phase 3-hub og NHRP Next Hop Server (NHS), mens øvrige lokasjoner er spokes (Figur \ref{fig:logisk_arkitektur_dmvpn}). Hubben konfigureres med NHRP Redirect og spoke-ruterne med NHRP Shortcut. Direkte spoke-to-spoke-trafikk avlaster BNHQ, og nye lokasjoner kan legges til uten et komplett sett med statiske punkt-til-punkt-tunneler.
 
-BNHQ på lokasjon 1 fungerer som DMVPN-hub og NHRP Next Hop Server (NHS). De øvrige lokasjonene er spokes og registrerer seg mot hubben.
-
-Kontrollplanet følger en hub-and-spoke-modell for registrering og dynamisk ruting. Dataplanet kan derimot etablere direkte forbindelser mellom spokes, slik at trafikken ikke trenger å fortsette via hubben når en snarvei først er opprettet.
-
-I Phase 3 sender hubben NHRP Redirect, mens spoke-ruterne bruker NHRP Shortcut. Den første trafikken kan dermed gå via hubben, før det etableres en direkte spoke-to-spoke-forbindelse.
-
-Dette reduserer unødvendig trafikk gjennom BNHQ og gjør det enklere å legge til nye lokasjoner uten å opprette et komplett sett med statiske punkt-til-punkt-tunneler.
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{../Media/logisk_arkitektur.png}
@@ -300,7 +265,7 @@ DMVPN-overlayet bruker det eksisterende lag-3-VPN-et fra det litauiske forsvaret
 
 Overlay med behov for konfidensialitet og integritet beskyttes med IPsec (K2). Dermed er trafikken beskyttet også når den går gjennom infrastruktur som eFP ikke administrerer.
 
-BNHQ samler de sentrale tjenestene, blant annet TACACS+, syslog, NTP og Security Onion, i tillegg til tilkoblingen mot sivil ISP.
+BNHQ samler de sentrale tjenestene, blant annet TACACS+, syslog, RADIUS, NTP og Security Onion, i tillegg til tilkoblingen mot sivil ISP.
 
 \subsection{Logisk design}
 VLAN skiller tjenestene lokalt, mens VRF-Lite og separate overlay viderefører segmenteringen på lag 3 og mellom lokasjonene (K1). Kommunikasjon som skal tillates mellom soner styres av en eksplisitt trafikkpolicy (K2).
@@ -321,7 +286,7 @@ Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenter
 BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester og WAN-/ISP-tilkoblingen ble samlet her. Dette ga et felles administrasjons- og overvåkningspunkt, men medførte også avhengigheter som måtte vurderes ved bortfall av BNHQ.
 
 \subsection{Nettverkssikkerhet}
-Sikkerhetsdesignet bygger på flere lag med tiltak. Tabell \ref{tab:router-security} og \ref{tab:switch-security} oppsummerer mekanismene som er implementert på henholdsvis rutere og svitsjer. Denne delen beskriver derfor hovedsakelig hvordan mekanismene brukes i løsningen og hvilke begrensninger som må tas hensyn til.
+Tabellene \ref{tab:router-security} og \ref{tab:switch-security} oppsummerer sikkerhetsmekanismene. Nedenfor beskrives implementasjonsvalg og begrensninger.
 
 \subsubsection{Tilgangskontroll mellom nettverk}
 VRF-Lite separerer rutingtabellene, mens trafikkpolicyen i \texttt{FLOW\_POLICY} bestemmer hvilken trafikk som eksplisitt tillates. Generatoren oversetter policyen til extended ACL-er som legges inbound på lokale lag-3-grensesnitt. ACL-ene oppretter ikke ruting mellom VRF-er; eventuell kommunikasjon på tvers av VRF-grenser krever derfor også en kontrollert rutingsmekanisme.
@@ -336,7 +301,7 @@ Generatoren konfigurerer autentisering, EXEC-autorisasjon og accounting av EXEC-
 \subsubsection{Tilgangskontroll på klientporter}
 Utvalgte klientporter bruker IEEE 802.1X med RADIUS. Endepunkter som ikke støtter 802.1X må håndteres gjennom en dokumentert unntakspolicy.
 
-Inter-switch-forbindelser er trusted for DHCP Snooping og DAI, slik at legitim DHCP- og ARP-trafikk fra underliggende svitsjer kan passere. Klientporter forblir untrusted. Dette skillet er viktig for at beskyttelsesmekanismene ikke skal blokkere legitim infrastrukturtrafikk.
+I dette designet er inter-switch-forbindelser trusted for DHCP Snooping og DAI, mens klientporter er untrusted. Beskyttelsen forutsetter derfor kontroll av trafikken på klientportene før den når en trusted forbindelse.
 
 \subsubsection{Overvåkning, logging og tidsgrunnlag}
 Syslog, SNMPv3 og trafikkspeiling gir sentral synlighet, men trafikkspeilingen er passiv og blokkerer ikke angrep.
@@ -346,8 +311,6 @@ Ved ERSPAN mottar HUB SW1 de speilede strømmene og sender dem til en dedikert s
 NTP-oppsettet gir et felles internt tidsgrunnlag, men generatorversjonen benytter ikke en ekstern autoritativ tidskilde eller reservekilde. Løsningen gir derfor konsistente tidsstempler internt, men korrekt UTC og oppførsel ved bortfall må verifiseres separat.
 
 \subsubsection{Sikkerhetsmekanismer på rutere}
-Tabell \ref{tab:router-security} oppsummerer sikkerhetsmekanismene som inngår i ruterdesignet.
-
 \begin{table}[H]
 \centering
 \caption{Sikkerhetsmekanismer i designet for lokasjonsrutere.}
@@ -391,8 +354,6 @@ Begrenser etablering av EIGRP-naboskap til grensesnitt der rutingprotokollen fak
 \end{table}
 
 \subsubsection{Sikkerhetsmekanismer på svitsjer}
-Tabell \ref{tab:switch-security} oppsummerer sikkerhetsmekanismene som inngår i svitsjdesignet.
-
 \begin{table}[H]
 
 \centering
@@ -527,28 +488,28 @@ Konfigurasjonsgeneratoren bruker ett felles Excel-grunnlag for å produsere stan
     \rowcolors{1}{}{}
 \end{table}
 
-Excel-arbeidsboken er strukturert slik at nettverksdata og valg som varierer mellom lokasjoner kan endres uten at Python-koden må skrives om. En detaljert oversikt over forventede tabeller, felter og betingede parametere er derfor lagt til som vedlegg.
+Excel-arbeidsboken er strukturert slik at nettverksdata og valg som varierer mellom lokasjoner kan endres uten at Python-koden må skrives om. En oversikt over forventede tabeller, felter og betingede parametere skal følge som vedlegg.
 
-\textcolor{red}{\textbf{Se vedlegg XXX for forventet datagrunnlag og struktur i Excel-arbeidsboken.}}
+\textcolor{red}{\textbf{Oversikten over Excel-grunnlaget må ferdigstilles i vedlegg \ref{sec:vedlegg-excel}.}}
 
 \subsection{Utrulling, sikkerhetskopi og gjenoppretting}
 
 \subsubsection{Utrulling }
-Diagramet under viser arbeidsflyten for utrulling av konfigurasjoner fra generering til verifikasjon og lagring i \texttt{startup-config}.
+Diagrammet under viser arbeidsflyten for utrulling av konfigurasjoner fra generering til verifikasjon og lagring i \texttt{startup-config}.
 \begin{figure}[H]
 \centering
-\includegraphics[width=1\textwidth]{../../Media/init_pdf.pdf}
+\includegraphics[width=1\textwidth]{../Media/init_pdf.pdf}
 \caption{Arbeidsflyt for utrulling av konfigurasjoner}
 \label{fig:utrulling_workflow}
 \end{figure}
 \noindent
-Dersom SSH ikke er tilgjengelig, er \texttt{copy and paste} versjon av konfigurasjonene også tilgjengelig.
+Konfigurasjonene kan også legges inn manuelt via konsoll dersom SSH ikke er tilgjengelig.
 
 \subsubsection{Sikkerhetskopi}
 Diagrammet under viser arbeidsflyten for sikkerhetskopiering av konfigurasjoner før endringer (K8).
 \begin{figure}[H]
 \centering
-\includegraphics[width=1\textwidth]{../../Media/backup_pdf.pdf}
+\includegraphics[width=1\textwidth]{../Media/backup_pdf.pdf}
 \caption{Arbeidsflyt for sikkerhetskopiering av konfigurasjoner}
 \label{fig:backup_workflow}
 \end{figure}
@@ -557,7 +518,7 @@ Diagrammet under viser arbeidsflyten for sikkerhetskopiering av konfigurasjoner 
 Diagrammet under viser arbeidsflyten for gjenoppretting av konfigurasjoner fra sikkerhetskopi (K8).
 \begin{figure}[H]
 \centering
-\includegraphics[width=1\textwidth]{../../Media/restore_pdf.pdf}
+\includegraphics[width=1\textwidth]{../Media/restore_pdf.pdf}
 \caption{Arbeidsflyt for gjenoppretting av konfigurasjoner}
 \label{fig:restore_workflow}
 \end{figure}
@@ -567,6 +528,4 @@ K7 kan ikke løses med nettverkskonfigurasjon alene. Ubrukte uttak bør deaktive
 
 Før overlevering må ansvar for brukerforvaltning, varsler, oppdateringer og hendelseshåndtering være avklart og inngå i driftsdokumentasjonen (F5). De operative og ressursmessige konsekvensene av disse tiltakene drøftes videre i diskusjonskapitlet.
 
-\subsection{Operative konsekvenser}
-Konsekvensene av segmentering, sentraliserte tjenester, skalerbarhet og økt driftsansvar drøftes samlet i diskusjonskapitlet. Før produksjonssetting må nødvendige tjenesteflyter være identifisert, og generert konfigurasjon må valideres i testmiljø.
-
+\endgroup

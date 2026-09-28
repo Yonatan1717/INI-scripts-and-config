@@ -1,4 +1,26 @@
 \label{sec:vedlegg}
-\dots
+\appendix
 
+\section{Beregning av QoS-andeler}
+\label{sec:vedlegg-qos}
+For trafikkklasse $i$ beregner generatoren minimumsandelen som
+\[
+ B_i=\frac{P_i}{\sum_j P_j}\cdot75\%,
+\]
+der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest; ved lik rest prioriteres høyere vekt. De tildelte andelene summerer dermed til 75 prosent.
 
+\section{Testmatrise og testbevis}
+\label{sec:vedlegg-testmatrise}
+\textbf{Må ferdigstilles før innlevering.} Testmatrisen og testbevisene var ikke inkludert i rapportmappen som ble revidert. Sett inn faktisk dokumentasjon med kobling til K1--K8, testbetingelser, akseptkriterier, observerte resultater og avvik. Påstander om gjennomførte tester i hovedteksten må kontrolleres mot denne dokumentasjonen.
+
+\section{Datagrunnlag for konfigurasjonsgeneratoren}
+\label{sec:vedlegg-excel}
+\textbf{Må ferdigstilles før innlevering.} Sett inn den planlagte oversikten over Excel-arbeidsbokens tabeller, felter og betingede parametere. Det opprinnelige utkastet henviste til dette vedlegget, men inneholdt ikke selve oversikten.
+
+\section{Security onion konfigurasjon}
+\label{sec:vedlegg-seconi}
+Må ferdigstilles før innlevering. Beskriv hvordan Security Onion settes opp, inkludert installasjonen som brukes i CyberOps.
+
+\section{Link til git repository}
+\label{sec:vedlegg-git}
+Må ferdigstilles før innlevering. Sett inn lenke til git repository som inneholder prosjektets kildekode og relevant dokumentasjon.
