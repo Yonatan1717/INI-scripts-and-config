@@ -7,7 +7,7 @@ For trafikkklasse $i$ beregner generatoren minimumsandelen som
 \[
  B_i=\frac{P_i}{\sum_j P_j}\cdot75\%,
 \]
-der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest; ved lik rest prioriteres høyere vekt. De tildelte andelene summerer dermed til 75 prosent.
+der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest. Ved lik rest prioriteres høyere vekt. De tildelte andelene summerer dermed til 75 prosent.
 
 \section{Testmatrise og testbevis}
 \label{sec:vedlegg-testmatrise}
@@ -15,16 +15,18 @@ der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltal
 \section*{Testmatrise}
 % Krever \usepackage{longtable}, \usepackage{booktabs},
 % \usepackage[table]{xcolor} og \usepackage{array} i preambelen.
+\begingroup
 \scriptsize
-\setlength{\tabcolsep}{3pt}
+\uchyph=1
+\setlength{\tabcolsep}{2pt}
 \rowcolors{2}{lightgreen}{white}
 \begin{longtable}{
->{\raggedright\arraybackslash}p{0.6cm}
->{\raggedright\arraybackslash}p{2.2cm}
->{\raggedright\arraybackslash}p{3.7cm}
->{\raggedright\arraybackslash}p{3.7cm}
->{\raggedright\arraybackslash}p{3.1cm}
->{\raggedright\arraybackslash}p{1.2cm}}
+>{\RaggedRight\arraybackslash}p{0.6cm}
+>{\RaggedRight\arraybackslash}p{2cm}
+>{\RaggedRight\arraybackslash}p{3.5cm}
+>{\RaggedRight\arraybackslash}p{4cm}
+>{\RaggedRight\arraybackslash}p{3.5cm}
+>{\RaggedRight\arraybackslash}p{1.5cm}}
 \caption{Gjennomførte tester og resultater.}
 \label{tab:testmatrise}\\
 \toprule
@@ -144,12 +146,12 @@ Kontroller NHRP, valgt DMVPN-fase og direkte forbindelse mellom spoker. &
 Riktig registrering og faseoppsett. Spoke-til-spoke fungerer som planlagt. &
 NHRP og faseoppsett stemte. Spoke-til-spoke-kommunikasjon fungerte. & Bestått \\
 
-22 & IPsec og tunneltrafikk &
+22 & IPsec og \linebreak tunneltrafikk &
 Test trafikk i hver VRF. Kontroller IKE/IPsec-profiler, sikkerhetsassosiasjoner, tellere og pakkefangst. &
 Tillatt trafikk fungerer, og tunneler med krypteringskrav bruker riktig beskyttelse. &
 Tillatt trafikk fungerte. Profiler, sikkerhetsassosiasjoner og tellere viste forventet beskyttelse. & Bestått \\
 
-23 & DHCP og DNS &
+23 & DHCP og \linebreak DNS &
 Hent og forny adresse i hvert klientnett. Kontroller reserverte adresser, DNS-utdeling og navneoppslag fra INET. &
 Riktig adresse, maske og gateway tildeles. Reserverte adresser holdes utenfor. INET får konfigurert DNS og fungerende oppslag. &
 Klientene fikk riktige nettverksinnstillinger. Reservasjoner og DNS-oppslag fungerte. & Bestått \\
@@ -162,24 +164,24 @@ Enhetene ble synkronisert. Bortfall ble oppdaget, og synkronisering kom tilbake.
 25 & Administrasjon &
 Test lokal og ekstern SSH, avvisning fra øvrige nett, Telnet, konsollinnlogging og tidsavbrudd. &
 Bare godkjente kilder får SSH-tilgang. Telnet avvises, konsoll krever innlogging, og tidsavbrudd fungerer. &
-Godkjent SSH fungerte. Øvrige kilder og Telnet ble avvist; konsoll og tidsavbrudd fungerte. & Bestått \\
+Godkjent SSH fungerte. Øvrige kilder og Telnet ble avvist, konsoll og tidsavbrudd fungerte. & Bestått \\
 
 26 & TACACS+ &
 Test gyldig og ugyldig konto, ulike rettigheter, kildeadresser og returvei. &
 Serveren gjenkjenner enhetene og gir riktig innlogging og tilgangsnivå. &
 Gyldige kontoer fikk riktig tilgang. Ugyldige kontoer ble avvist. & Bestått \\
 
-27 & TACACS+ accounting &
+27 & TACACS+ \linebreak accounting &
 Logg inn og ut, og utfør kommando på nivå 15. &
 Sesjon og relevante kommandoer registreres på serveren. &
 Innlogging, utlogging og relevante kommandoer ble registrert. & Bestått \\
 
-28 & TACACS+ reservetilgang &
+28 & TACACS+ \linebreak reservetilgang &
 Test lokal konto ved serverbortfall og ved eksplisitt avvisning fra tilgjengelig server. &
 Lokal reservetilgang fungerer ved bortfall, men omgår ikke en eksplisitt avvisning. &
 Lokal konto fungerte ved bortfall, men ga ikke tilgang ved eksplisitt avvisning. & Bestått \\
 
-29 & 802.1X og RADIUS &
+29 & 802.1X og \linebreak RADIUS &
 Kontroller valgte klientporter og RADIUS-klientadresser. Test godkjent klient, feil legitimasjon og klient uten 802.1X. &
 Riktige porter krever autentisering. Serveren gjenkjenner svitsjene, og bare godkjente klienter får tilgang. &
 Godkjente klienter fikk tilgang. Feil legitimasjon og klient uten 802.1X ble avvist. & Bestått \\
@@ -242,6 +244,7 @@ Utrulling fulgte planen. Sikkerhetskopiering og gjenoppretting fungerte som forv
 \bottomrule
 \end{longtable}
 \rowcolors{1}{}{}
+\endgroup
 
 % Krever: array, booktabs, float og \usepackage[table]{xcolor}.
 % Fargene tablegreen og lightgreen er definert i den eksisterende rapporten.
@@ -256,8 +259,6 @@ Arbeidsboken \texttt{demo.xlsx} inneholder arkene
 \texttt{FLOW\_POLICY}. Lokasjonsarkene beskriver rutere, tjenestenett,
 tunneler og svitsjer. Trafikkpolicyen er samlet i et eget ark.
 Tabellene nedenfor viser strukturen og utvalgte verdier fra hub-lokasjonen.
-Felles struktur beskrives n gang; de øvrige lokasjonene har egne adresser
-og enhetsparametere.
 
 \begin{table}[H]
     \centering
@@ -366,7 +367,7 @@ Alle fem tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
 
 \noindent
 \textbf{Res.} gjengir \texttt{antall-res}, antall reserverte adresser.
-\textbf{AF-kode} gjengir \texttt{pri-afxx}; eksempelvis tilsvarer 21
+\textbf{AF-kode} gjengir \texttt{pri-afxx}, eksempelvis tilsvarer 21
 merkingen AF21. \textbf{Vekt} gjengir \texttt{pri-1-10} og brukes som
 prioriteringsvekt ved fordeling av båndbredde. \textbf{Andel} er den
 beregnede minimumsandelen fra QoS-vektingen i designet.
@@ -493,7 +494,7 @@ Alle tunneladressene i eksemplet bruker /24-maske. NHRP-ID gjengir feltet
 
         \texttt{MONITORING ip} &
         <ERSPAN destination IP> &
-        Felt for IP-adresse til overvåkningsfunksjonen. \\
+        Felt for IP-adresse til overvåkningsfunksjonen (ERSPAN). \\
 
         \texttt{tacacs\_syntax} &
         -- &
@@ -585,7 +586,7 @@ Kolonnene tilsvarer \texttt{source}, \texttt{destination},
 Ifølge forklaringene i arbeidsboken avsluttes hver genererte ACL med
 \texttt{deny ip any any log}. Bare kildesoner som finnes i policyen får
 en slik ingress-ACL. Målet \texttt{INTERNET} oversettes til
-\texttt{any}; avgrensning mot interne mål krever derfor eksplisitte
+\texttt{any}. Avgrensning mot interne mål krever derfor eksplisitte
 regler før brede tillatelser.
 
 \medskip
@@ -608,5 +609,4 @@ nøkler er utelatt eller maskert i vedlegget.
 
 \section{Link til git repository}
 \label{sec:vedlegg-git}
-lenke til prosjektets git repository: \url{https://github.com/brukernavn/prosjekt}
-
+Lenke til prosjektets GitHub-repository: \href{https://github.com/Yonatan1717/autoconf-m-data}{\textcolor{blue}{https://github.com/Yonatan1717/autoconf-m-data}}
