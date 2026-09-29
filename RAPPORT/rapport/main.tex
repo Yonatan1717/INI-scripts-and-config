@@ -37,11 +37,13 @@
 \input{sections/sammendrag}
 \clearpage
 
+%TC:ignore
 \input{sections/forkortelser}
 \clearpage
 
 \tableofcontents
 \clearpage
+%TC:endignore
 
 \pagenumbering{arabic}
 \setcounter{page}{1}
@@ -61,6 +63,7 @@
 \input{sections/konklusjon}
 \clearpage
 
+%TC:ignore
 \phantomsection
 \printbibliography[heading=bibintoc,title={Referanser}]
 \clearpage
@@ -69,5 +72,6 @@
 \section*{Vedlegg}
 \addcontentsline{toc}{section}{Vedlegg}
 \input{sections/vedlegg}
+%TC:endignore
 
 \end{document}
