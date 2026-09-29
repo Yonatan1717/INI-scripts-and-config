@@ -1,41 +1,49 @@
 % frontpage.tex
-\thispagestyle{empty}
-\begin{minipage}{0.15\textwidth}
-    \includegraphics[height=3cm]{../Media/cisk.png}
-\end{minipage}%
-\begin{minipage}{0.4\textwidth}
-    \vspace{10ex}
-    \raggedright
-    {\bfseries\itshape\institution}\\
-    {\bfseries\itshape\laboratory}
-\end{minipage}%
-\begin{minipage}{0.4\textwidth}
-    \vspace{13ex}
-    \raggedleft
-    {\today}
-\end{minipage}
-\vspace{1ex}
+\begingroup
 
-{\noindent\rule{\textwidth}{2pt}} \\ \vspace{3ex}
-\begin{center}
-    {\fontsize{32}{36}\selectfont \bfseries \assignmenttype}\\[6ex]
-    {\fontsize{24}{28}\selectfont \bfseries \assignmenttitle}\\[6ex]
-    {\fontsize{16}{20}\selectfont \bfseries \coursecode}\\[3ex]
+% ===== ENDRE DISSE FELTENE =====
+\def\ForsideTittel{Bataljonsnett Litauen}
+\def\ForsideEmne{ING3508 Militær informasjonsinfrastruktur}
+\def\ForsideGruppe{Gruppe 8}
+\def\ForsideDato{29.09.2026}
+\def\ForsideOrd{FYLL INN}
+% ==============================
 
-    {\noindent\rule{\textwidth}{2pt}} \\\vspace{5ex}
+\begin{titlepage}
+    \thispagestyle{empty}
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{0pt}
 
-    {\fontsize{20}{24}\selectfont \bfseries NETTVERKSPROSJEKT}\\[3ex]
-    {\fontsize{20}{24}\selectfont \bfseries \studentname}\\ [5ex]
-\end{center}
+    % Skrifttypen gjelder bare forsiden.
+    \fontfamily{ptm}\selectfont
 
-{\noindent\rule{\textwidth}{2pt}} \\\vspace{5ex}
+    \begin{center}
+        \vspace*{5.7cm}
 
-\begin{flushleft}
-    \begin{tabular}{@{}ll}
-    {\fontsize{14}{18}\selectfont \bfseries KLASSE:} & {\fontsize{14}{18}\selectfont \bfseries \class} \\
-    \vspace{2ex} \\
-    \vspace{90px}\\
-    {\fontsize{14}{18}\selectfont \bfseries Rapport levert:} & {\fontsize{14}{18}\selectfont \bfseries \submissiondate} \\
-    \end{tabular}
-\end{flushleft}
-\clearpage
+        % Bildet ligger i Media-mappen.
+        \includegraphics[width=5.2cm]{../Media/forsidebilde.pdf}
+        \par\vspace{0.6cm}
+
+        {\fontsize{40}{46}\selectfont
+        \ForsideTittel\par}
+
+        \vspace{0.7cm}
+
+        {\fontsize{22}{27}\selectfont
+        \ForsideEmne\par}
+
+        \vspace{1cm}
+
+        {\fontsize{12}{16}\selectfont\bfseries
+        \ForsideGruppe\par
+        \vspace{0.3cm}
+        \ForsideDato\par}
+    \end{center}
+
+    \vfill
+
+    {\fontsize{11}{14}\selectfont
+    \color{red}ANTALL ORD: \ForsideOrd\par}
+
+\end{titlepage}
+\endgroup
