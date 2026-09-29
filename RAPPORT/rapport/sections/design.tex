@@ -176,7 +176,7 @@ Separasjonen forenklet også administrasjon og feilsøking.
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{8pt}
     \rowcolors{2}{lightgreen}{white}
-    \begin{tabular}{lll}
+    \begin{tabular}{lcc}
         \toprule
         \rowcolor{tablegreen}
         \color{white}\textbf{Tjeneste} &
@@ -203,7 +203,7 @@ Separasjonen forenklet også administrasjon og feilsøking.
     \renewcommand{\arraystretch}{1.3}
     \setlength{\tabcolsep}{5pt}
     \rowcolors{2}{lightgreen}{white}
-    \begin{tabular}{llllcc}
+    \begin{tabular}{lllccc}
         \toprule
         \rowcolor{tablegreen}
         \color{white}\textbf{Tunnel} &
@@ -244,11 +244,11 @@ QoS prioriterer operative tjenester ved MAN-belastning (K6, F2). Generatoren kla
         \color{white}\textbf{Vekt ($P_i$)} &
         \color{white}\textbf{Båndbreddeandel ($B_i$)} \\
         \midrule
-        MGMT          & AF41 & 7 & 15\% \\
+        MGMT          & AF31 & 7 & 15\% \\
         INET          & AF21 & 2  & 4\%  \\
-        UNET          & AF44 & 7  & 14\% \\
-        PA            & AF43 & 10 & 21\% \\
-        MONITORING    & AF42 & 10 & 21\% \\
+        UNET          & AF43 & 7  & 14\% \\
+        PA            & AF42 & 10 & 21\% \\
+        MONITORING    & AF41 & 10 & 21\% \\
         Ufordelt andel & --   & -- & 25\% \\
         \bottomrule
     \end{tabular}
