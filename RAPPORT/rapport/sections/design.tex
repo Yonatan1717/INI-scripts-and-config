@@ -143,7 +143,7 @@ Tjenestenettene følger modellen \texttt{10.X.Y.0/24}, der X angir lokasjon og Y
 \end{table}
 %TC:endignore
 \noindent
-\textbf{Res.} angir adresser utenfor DHCP-poolen; MGMT og MONITORING reserverer 40 til statisk adressering. Lokasjons-ID X begrenses til 1--254 i den felles modellen fordi .255 er broadcast i DMVPN-nettene \texttt{172.16.<tjeneste>.X/24}.
+\textbf{Res.} angir adresser utenfor DHCP-poolen. MGMT og MONITORING reserverer 40 til statisk adressering. Lokasjons-ID X begrenses til 1--254 i den felles modellen fordi .255 er broadcast i DMVPN-nettene \texttt{172.16.<tjeneste>.X/24}.
 
 \subsubsection{Loopback- og DMVPN-plan}
 Tabellene \ref{tab:loopback-site-x} og \ref{tab:dmvpn-site-x} viser hvordan segmenteringen videreføres mellom lokasjonene, og hvilke overlay som beskyttes med IPsec. Dette knytter adresse- og tunnelplanen direkte til K1 og K2.
@@ -316,7 +316,7 @@ BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester 
 Tabellene \ref{tab:router-security} og \ref{tab:switch-security} oppsummerer sikkerhetsmekanismene. Nedenfor beskrives implementasjonsvalg og begrensninger.
 
 \subsubsection{Tilgangskontroll mellom nettverk}
-VRF-Lite separerer rutingtabellene, mens trafikkpolicyen i \texttt{FLOW\_POLICY} bestemmer hvilken trafikk som eksplisitt tillates. Generatoren oversetter policyen til extended ACL-er som legges inbound på lokale lag-3-grensesnitt. ACL-ene oppretter ikke ruting mellom VRF-er; eventuell kommunikasjon på tvers av VRF-grenser krever derfor også en kontrollert rutingsmekanisme.
+VRF-Lite separerer rutingtabellene, mens trafikkpolicyen i \texttt{FLOW\_POLICY} bestemmer hvilken trafikk som eksplisitt tillates. Generatoren oversetter policyen til extended ACL-er som legges inbound på lokale lag-3-grensesnitt. ACL-ene oppretter ikke ruting mellom VRF-er, dermed vil eventuell kommunikasjon på tvers av VRF-grenser kreve en kontrollert rutingsmekanisme.
 
 Hver genererte ACL avsluttes med en deny-regel med logging. Dersom \texttt{FLOW\_POLICY} er tom, genereres ingen slike ACL-er, og det må derfor kontrolleres at alle relevante kildesoner er representert i policyen.
 
