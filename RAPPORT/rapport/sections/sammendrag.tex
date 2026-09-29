@@ -4,31 +4,10 @@
 
 \section*{Sammendrag}
 
-Rapporten presenterer et forslag til forbedring av
-bataljonsstridsgruppens ugraderte nettverk i Rukla,
-Litauen. Manglende segmentering, kontroll med tilkoblet
-utstyr og overvåkning medfører risiko for uønsket tilgang
-og driftsavbrudd som kan ramme telefoni, PA-anlegg,
-internettilgang, velferdstjenester, og generell operativ evne.
+Bataljonsstridsgruppens ugraderte nettverk i Rukla har mangelfull segmentering, begrenset kontroll med tilkoblet utstyr og utilstrekkelig sentral overvåkning. Private rutere med egne DHCP-servere har allerede skapt ustabilitet. Rapporten foreslår derfor en rekonfigurasjon som skiller tjenester og brukergrupper i egne nettverk, begrenser trafikken mellom dem og beskytter forbindelsene mellom bygg med kryptering.
 
-Designet omfatter sikkerhetssoner, kontrollert
-kommunikasjon, beskyttet trafikk mellom bygg og sikker
-administrasjon. Logging og overvåkning med felles
-tidsgrunnlag skal støtte oppfølging av hendelser.
-Tekniske tiltak suppleres med fysisk sikring,
-tydelig driftsansvar og rutiner for bruk,
-konfigurasjonskontroll og gjenoppretting.
+Designet omfatter også kontroll på klientporter, sikker administrasjon, sentral logging med felles tidsgrunnlag og overvåkning av nettverkstrafikk. Konfigurasjonsgenerator, sikkerhetskopier og rutiner for gjenoppretting skal gjøre løsningen enklere å drifte og overføre til senere kontingenter. Fysisk sikring og tydelig driftsansvar inngår som nødvendige tiltak rundt den tekniske løsningen.
 
-Eksisterende funksjonalitet skal ivaretas med
-tilgjengelig utstyr, uten større nyanskaffelser,
-økt ressursbehov eller endringer i forbindelsene
-levert av det litauiske forsvaret.
-
-Dokumenterte laboratorietester, begrensninger og
-gjenstående risiko skal danne grunnlag for S6s
-beslutning om eventuell rekonfigurasjon.
-Dokumentasjonen skal også støtte opplæring og
-overføring av driftsansvar til fremtidige kontingenter.
-
+Laboratorietestene ga forventede resultater for de testede funksjonene, blant annet segmentering, ruting, trafikkfiltrering, kryptert transport, tilgangskontroll og logging. ERSPAN kunne ikke testes, og må derfor testes i et senere stadium. Før eventuell rekonfigurasjon må løsningen verifiseres på det faktiske utstyret og transportforbindelsen.  Det må også bekreftes at eksisterende tjenester fungerer, og at driften kan håndteres innenfor dagens ressursramme. S6 må deretter vurdere og akseptere gjenværende operativ risiko.
 \par
 \endgroup
