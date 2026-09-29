@@ -9,10 +9,8 @@ For trafikkklasse $i$ beregner generatoren minimumsandelen som
 \]
 der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltall. Resterende prosentpoeng fordeles til klassene med størst desimalrest. Ved lik rest prioriteres høyere vekt. De tildelte andelene summerer dermed til 75 prosent.
 
-\section{Testmatrise og testbevis}
+\section{Testmatrise}
 \label{sec:vedlegg-testmatrise}
-
-\section*{Testmatrise}
 % Krever \usepackage{longtable}, \usepackage{booktabs},
 % \usepackage[table]{xcolor} og \usepackage{array} i preambelen.
 \begingroup
@@ -607,6 +605,96 @@ INET, UNET, PA og MONITORING. \texttt{MONITORING ip} finnes som felt i svitsjtab
 men er tomt for hub-svitsjen. Passord, passordhasher og faktiske delte
 nøkler er utelatt eller maskert i vedlegget.
 
-\section{Link til git repository}
+\clearpage
+\section{Link til GitHub-repository}
 \label{sec:vedlegg-git}
-Lenke til prosjektets GitHub-repository: \href{https://github.com/Yonatan1717/autoconf-m-data}{\textcolor{blue}{https://github.com/Yonatan1717/autoconf-m-data}}
+
+Prosjektets kildekode, konfigurasjonsfiler og støttedokumentasjon er tilgjengelig i følgende GitHub-repository:
+
+\begin{center}
+    \href{https://github.com/Yonatan1717/autoconf-m-data}
+    {\textcolor{blue}{https://github.com/Yonatan1717/autoconf-m-data}}
+\end{center}
+
+Tabell~\ref{tab:github-innhold} gir en oversikt over hovedinnholdet i repositoryet.
+
+\begin{table}[H]
+    \centering
+    \caption{Oversikt over innholdet i GitHub-repositoryet.}
+    \label{tab:github-innhold}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{3.2cm}
+        >{\raggedright\arraybackslash}p{5.2cm}
+        >{\raggedright\arraybackslash}p{6.0cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Område} &
+        \color{white}\textbf{Innhold} &
+        \color{white}\textbf{Hensikt} \\
+        \midrule
+
+        Generator &
+        Python-skript og Excel-basert input &
+        Automatisk generering av Cisco-konfigurasjoner for rutere og switcher. \\
+
+        Ansible &
+        Playbooks for utrulling, backup og gjenoppretting &
+        Automatisert konfigurasjon og administrasjon av nettverksenheter. \\
+
+        FreeRADIUS &
+        Docker-oppsett, klientdefinisjoner og brukerfiler &
+        Sentral autentisering for IEEE 802.1X og RADIUS-baserte tjenester. \\
+
+        TACACS+ &
+        tac\_plus-ng-konfigurasjon og Docker-oppsett &
+        Sentral AAA for administrativ tilgang til nettverksutstyr. \\
+
+        Syslog &
+        syslog-ng-konfigurasjon og Docker-oppsett &
+        Sentral innsamling og lagring av logger fra nettverksenhetene. \\
+
+        NTP &
+        Konfigurasjonsveiledning for Chrony/NTP &
+        Felles tidskilde for nettverksutstyr og støttetjenester. \\
+
+        SNMPv3 &
+        Konfigurasjonseksempler og testkommandoer &
+        Sikker innhenting av drifts- og overvåkningsinformasjon. \\
+
+        Security Onion &
+        Installasjonsguide og dokumentasjon for trafikkinnsamling &
+        Sentral analyse og overvåkning av nettverkstrafikk. \\
+
+        Cisco-maler &
+        Eksempelkonfigurasjoner for AAA, SNMPv3, Syslog, NTP og overvåkning &
+        Gjenbrukbare konfigurasjonsmaler for nettverksenhetene. \\
+
+        Ubuntu-maler &
+        Eksempel på Netplan- og serverkonfigurasjon &
+        Forenkler oppsett av den sentrale Ubuntu-serveren. \\
+
+        Dokumentasjon &
+        Arkitektur-, utrullings-, test- og begrensningsdokumentasjon &
+        Beskriver hvordan løsningen bygges, testes og driftes. \\
+
+        Eksempeldata &
+        Sanitert Excel-arbeidsbok og eksempelkonfigurasjoner &
+        Gjør det mulig å demonstrere generatoren uten reelle sensitive verdier. \\
+
+        GitHub Actions &
+        Automatisk Python smoke test &
+        Kontrollerer at generator og hjelpeverktøy fortsatt fungerer etter kodeendringer. \\
+
+        \bottomrule
+    \end{tabular}
+
+    \rowcolors{1}{}{}
+\end{table}
+
+Sensitive verdier som passord, delte nøkler og autentiseringsopplysninger er erstattet med eksempelverdier i det publiserte repositoryet og må konfigureres lokalt før løsningen tas i bruk.

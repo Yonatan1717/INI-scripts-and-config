@@ -11,7 +11,7 @@ Adresseplanen \texttt{10.X.Y.0/24} prioriterer enkel drift fremfor maksimal adre
 Bruk av eksisterende Cisco-utstyr reduserer behovet for nyanskaffelser, men gjør plattformkompatibilitet viktig. Generatoren støtter flere syntaksvalg, men endelig konfigurasjon må fortsatt valideres mot IOS-versjonen på produksjonsutstyret.
 
 \subsection{Kryptering og sikkerhet}
-
+    
 Sikkerheten er avhengig av at flere lag virker sammen. VRF-er begrenser rutingsdomenene, VLAN sørger for segmentering, ACL-er styrer tillatte flyter, og IPsec beskytter overlay der konfidensialitet og integritet kreves. Testingen viste at filtrering og IPsec fungerte etter designet. Krypteringen reduserer samtidig behovet for å stole på underliggende transportinfrastruktur som eFP ikke administrerer.
 
 Den viktigste operative risikoen ligger derfor ikke i en enkelt mekanisme, men i feil konfigurasjon av grensene mellom dem. Feil trusted/untrusted-rolle kan for eksempel svekke beskyttelsen på klientporter eller blokkere legitim infrastrukturtrafikk. Standardisert generering reduserer risikoen for slike avvik, men erstatter ikke kontroll av kabling, portroller og generert konfigurasjon.
