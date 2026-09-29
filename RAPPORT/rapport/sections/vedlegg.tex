@@ -216,8 +216,8 @@ Forventet trafikk mottas på fjernsensoren. &
 Testen ble ikke gjennomført. & Ikke testet \\
 
 36 & Overvåkingsdekning &
-Test lokal trafikk, trafikk mellom svitsjer og WAN-trafikk. Sammenlign mottatte pakker ved normal og høy belastning. &
-Dekning, blindsoner, duplikater og tap dokumenteres og vurderes mot kravene. &
+Test lokal trafikk, trafikk mellom svitsjer og MAN-trafikk, samt teste at alarmsystemet trigges korrekt i Suricata. &
+Trafikken speiles korrekt og trigger alarmsystemet ved treff på signaturer i Suricata. &
 Den gjennomførte kontrollen ga forventet dekning. ERSPAN inngikk ikke i testen. & Bestått \\
 
 38 & QoS &
@@ -333,7 +333,7 @@ og enhetsparametere.
 \subsection*{Eksempler på adressering, tunneler og svitsjvalg}
 
 Adressefeltene under gjengir de lagrede formelresultatene i arbeidsboken.
-Alle fire tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
+Alle fem tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
 
 \begin{table}[H]
     \centering
@@ -343,7 +343,7 @@ Alle fire tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
     \renewcommand{\arraystretch}{1.35}
     \setlength{\tabcolsep}{5pt}
     \rowcolors{2}{lightgreen}{white}
-    \begin{tabular}{l c l l c c c}
+    \begin{tabular}{l c l l c c c c}
         \toprule
         \rowcolor{tablegreen}
         \color{white}\textbf{VRF} &
@@ -352,12 +352,14 @@ Alle fire tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
         \color{white}\textbf{Gateway} &
         \color{white}\textbf{Res.} &
         \color{white}\textbf{AF-kode} &
-        \color{white}\textbf{Vekt} \\
+        \color{white}\textbf{Vekt} &
+        \color{white}\textbf{Andel} \\
         \midrule
-        MGMT & 10 & 10.1.10.0 & 10.1.10.1 & 40 & 21 & 5 \\
-        INET & 20 & 10.1.20.0 & 10.1.20.1 & 40 & 11 & 2 \\
-        UNET & 30 & 10.1.30.0 & 10.1.30.1 & 40 & 42 & 7 \\
-        PA   & 40 & 10.1.40.0 & 10.1.40.1 & 40 & 41 & 10 \\
+        MGMT & 10 & 10.1.10.0 & 10.1.10.1 & 40 & 41 & 7 & 15\% \\
+        INET & 20 & 10.1.20.0 & 10.1.20.1 & 40 & 21 & 2 & 4\% \\
+        UNET & 30 & 10.1.30.0 & 10.1.30.1 & 40 & 44 & 7 & 14\% \\
+        PA   & 40 & 10.1.40.0 & 10.1.40.1 & 40 & 43 & 10 & 21\% \\
+        MONITORING & 50 & 10.1.50.0 & 10.1.50.1 & 40 & 42 & 10 & 21\% \\
         \bottomrule
     \end{tabular}
     \rowcolors{1}{}{}
@@ -367,7 +369,8 @@ Alle fire tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
 \textbf{Res.} gjengir \texttt{antall-res}, antall reserverte adresser.
 \textbf{AF-kode} gjengir \texttt{pri-afxx}; eksempelvis tilsvarer 21
 merkingen AF21. \textbf{Vekt} gjengir \texttt{pri-1-10} og brukes som
-prioriteringsvekt ved fordeling av båndbredde.
+prioriteringsvekt ved fordeling av båndbredde. \textbf{Andel} er den
+beregnede minimumsandelen fra QoS-vektingen i designet.
 
 \begin{table}[H]
     \centering
@@ -387,10 +390,11 @@ prioriteringsvekt ved fordeling av båndbredde.
         \color{white}\textbf{NHRP-ID} &
         \color{white}\textbf{IPsec} \\
         \midrule
-        tunnel 10 & MGMT & 172.16.10.1 & multipoint & 10 & Ja \\
-        tunnel 20 & INET & 172.16.20.1 & multipoint & 20 & Nei \\
-        tunnel 30 & UNET & 172.16.30.1 & multipoint & 30 & Ja \\
-        tunnel 40 & PA   & 172.16.40.1 & multipoint & 40 & Ja \\
+        tunnel 10 & MGMT & 172.16.10.1 & multipoint & 10 & True \\
+        tunnel 20 & INET & 172.16.20.1 & multipoint & 20 & False \\
+        tunnel 30 & UNET & 172.16.30.1 & multipoint & 30 & True \\
+        tunnel 40 & PA   & 172.16.40.1 & multipoint & 40 & True \\
+        tunnel 50 & MONITORING & 172.16.50.1 & multipoint & 50 & True \\
         \bottomrule
     \end{tabular}
     \rowcolors{1}{}{}
@@ -475,6 +479,7 @@ arket, i samme rekkefølge. Symbolske mål som \texttt{DNS} og
         UNET & UNET     & ip  & any & permit \\
         PA   & DHCP     & udp & 67  & permit \\
         PA   & PA       & ip  & any & permit \\
+        MONITORING & MONITORING & ip & any & permit \\
         \bottomrule
     \end{tabular}
     \rowcolors{1}{}{}
@@ -507,10 +512,7 @@ INET, UNET og PA. \texttt{MONITORING ip} finnes som felt i svitsjtabellen,
 men er tomt for hub-svitsjen. Passord, passordhasher og faktiske delte
 nøkler er utelatt eller maskert i vedlegget.
 
-\section{Security onion konfigurasjon}
-\label{sec:vedlegg-seconi}
-Må ferdigstilles før innlevering. Beskriv hvordan Security Onion settes opp, inkludert installasjonen som brukes i CyberOps.
-
 \section{Link til git repository}
 \label{sec:vedlegg-git}
-Må ferdigstilles før innlevering. Sett inn lenke til git repository som inneholder prosjektets kildekode og relevant dokumentasjon.
+lenke til prosjektets git repository: \url{https://github.com/brukernavn/prosjekt}
+

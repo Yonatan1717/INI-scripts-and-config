@@ -8,7 +8,7 @@
 \subsubsection{DHCP Snooping}
 
 DHCP snooping filtrerer DHCP-meldinger på lag 2 ved å skille mellom trusted og untrusted porter. Legitimiteten til DHCP-svar kontrolleres, og svitsjen bygger samtidig en bindingstabell som knytter IP-adresse, MAC-adresse, VLAN og fysisk port. Tabellen kan brukes videre av Dynamic ARP Inspection (DAI) og IP Source Guard (IPSG) \cite{forsvaret_nettverk_rolle1}.
-
+    
 \subsubsection{Dynamic ARP Inspection og IP Source Guard}
 
 DAI validerer ARP-trafikk på untrusted porter mot kjente IP-/MAC-bindinger og kan blokkere ugyldige eller forfalskede ARP-meldinger. IPSG kontrollerer på tilsvarende måte kilde-IP mot DHCP snooping-bindinger eller statiske bindinger og reduserer muligheten for IP-spoofing. For statisk adresserte enheter kan egne ARP ACL-er eller statiske bindinger være nødvendig \cite{forsvaret_nettverk_rolle1}.

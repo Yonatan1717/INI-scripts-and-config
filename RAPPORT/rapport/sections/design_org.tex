@@ -221,9 +221,9 @@ Separasjonen forenklet også administrasjon og feilsøking.
 \end{table}
 
 \subsubsection{QoS}
-QoS skal bidra til at viktige tjenester fortsatt får kapasitet når WAN-forbindelsen er belastet, og støtter dermed K6 og F2. Tabell \ref{tab:qos-site-x} viser vektingen mellom trafikkklassene. Vektingen angir ønsket prioritering, men faktisk kapasitet må fortsatt dokumenteres gjennom belastningstester.
+QoS skal bidra til at viktige tjenester fortsatt får kapasitet når MAN-forbindelsen er belastet, og støtter dermed K6 og F2. Tabell \ref{tab:qos-site-x} viser vektingen mellom trafikkklassene. Vektingen angir ønsket prioritering, men faktisk kapasitet må fortsatt dokumenteres gjennom belastningstester.
 
-Tjenester med størst operativ betydning får derfor en definert minimumsandel av kapasiteten når WAN-forbindelsen er belastet.
+Tjenester med størst operativ betydning får derfor en definert minimumsandel av kapasiteten når MAN-forbindelsen er belastet.
 
 Trafikken klassifiseres etter tjenestenett og merkes med DSCP. Til sammen fordeles 75~\% mellom de definerte trafikkklassene. De resterende 25~\% blir ikke eksplisitt reservert til \texttt{class-default} av generatoren.
 
@@ -309,7 +309,7 @@ Figur \ref{fig:logisk_ip} viser den logiske arkitekturen på et spoke-site. Klie
 
 MGMT, INET, UNET, PA og MONITORING ligger i hver sin VRF og har dermed separate rutingtabeller. Trafikk mellom sonene krever en eksplisitt definert sammenkobling og tilhørende trafikkpolicy.
 
-Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenteringen over WAN-et, selv om overlayene bruker det samme underliggende transportnettet.
+Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenteringen over MAN-et, selv om overlayene bruker det samme underliggende transportnettet.
 
 \begin{figure}[H]
     \centering
@@ -318,7 +318,7 @@ Hver VRF har sitt eget DMVPN-overlay mellom lokasjonene. Slik beholdes segmenter
     \label{fig:logisk_ip}
 \end{figure}
 \noindent
-BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester og WAN-/ISP-tilkoblingen ble samlet her. Dette ga et felles administrasjons- og overvåkningspunkt, men medførte også avhengigheter som måtte vurderes ved bortfall av BNHQ.
+BNHQ fikk en annen rolle enn spoke-lokasjonene fordi hubben, sentrale tjenester og MAN-/ISP-tilkoblingen ble samlet her. Dette ga et felles administrasjons- og overvåkningspunkt, men medførte også avhengigheter som måtte vurderes ved bortfall av BNHQ.
 
 \subsection{Nettverkssikkerhet}
 Sikkerhetsdesignet bygger på flere lag med tiltak. Tabell \ref{tab:router-security} og \ref{tab:switch-security} oppsummerer mekanismene som er implementert på henholdsvis rutere og svitsjer. Denne delen beskriver derfor hovedsakelig hvordan mekanismene brukes i løsningen og hvilke begrensninger som må tas hensyn til.
