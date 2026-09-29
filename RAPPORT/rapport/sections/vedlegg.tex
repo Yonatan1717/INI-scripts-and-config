@@ -54,12 +54,12 @@ der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltal
 01 & VLAN og porter &
 Kontroller portroller mot kablingen og klientenes VLAN-tilhørighet. &
 Porter har riktig rolle, og klienter tilhører riktig VLAN. &
-Portroller og VLAN-tilhørighet stemte med med forventet resultat. & Bestått \\
+Portroller og VLAN-tilhørighet stemte med forventet resultat. & Bestått \\
 
 02 & VLAN og porter &
-Test klientoppkobling og kommunikasjon i samme VLAN, både på samme og mellom ulike svitsjer. &
- Kommunikasjonen fungerer både i og mellom VLAN. &
-Kommunikasjon i samme, og mellom VLAN fungerte. & Bestått \\
+Test klientoppkobling og kommunikasjon i samme VLAN, både når klientene er tilkoblet samme svitsj og ulike svitsjer. &
+Klienter i samme VLAN kommuniserer både via samme svitsj og mellom ulike svitsjer. &
+Klienter i samme VLAN kommuniserte både via samme svitsj og mellom ulike svitsjer. & Bestått \\
 
 03 & VLAN og trunk &
 Kontroller tillatte VLAN over Port-channel og rutertrunk, samt native VLAN 999. &
@@ -84,7 +84,7 @@ Trafikken fortsatte ved enkeltbrudd. Fullt brudd ble oppdaget, og kanalen kom ti
 07 & Spanning Tree &
 Kontroller root bridge og STP-status for Port-channel på hvert site. &
 SW1 har planlagt root-rolle, og kanalen behandles som n logisk forbindelse. &
-SW1 hadde planlagt root-rolle. STP behandlet Port-channel som n forbindelse. & Bestått \\
+SW1 hadde planlagt root-rolle. STP behandlet Port-channel som én forbindelse. & Bestått \\
 
 08 & STP-beskyttelse &
 Test BPDU Guard på klientport, Root Guard på downlink og Loop Guard ved bortfall av forventede BPDU-er. &
@@ -522,7 +522,7 @@ Alle tunneladressene i eksemplet bruker /24-maske. NHRP-ID gjengir feltet
 \end{table}
 
 \noindent
-Verdien \texttt{200.1-20.5-30.5-40.5} angir n port i VLAN 200
+Verdien \texttt{200.1-20.5-30.5-40.5} angir én port i VLAN 200
 og fem porter i hvert av VLAN-ene 20, 30 og 40, syntax er altså:
 \[
     \texttt{VLAN.antall-VLAN.antall-...}
