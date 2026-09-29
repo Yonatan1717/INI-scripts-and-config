@@ -5,7 +5,7 @@
 \begingroup
 \captionsetup[table]{justification=centering,singlelinecheck=false}
 \section{Design}
-Designet skal gi S6 kontroll med segmentering, tilgang, administrasjon og overvåkning, samtidig som UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd videreføres. Kapitlet beskriver valgene og forutsetningene; kravoppfyllelse må dokumenteres gjennom testing.
+Designet har som hensikt å gi S6 enklere kontroll på nettet med bruk av segmentering, tilgang, administrasjon og overvåkning. Samtidig skal UGRADERT telefoni, PA-anlegg og Internett-tilgang for kontorbruk og velferd videreføres. Kapitlet beskriver valgene og forutsetningene, som skal verifiseres senere gjennom testing.
 
 \subsection{Utgangspunkt og rammebetingelser}
 Stabssjefen fastsatte følgende rammebetingelser i samråd med S6:
@@ -45,7 +45,7 @@ F6 & Godkjenning & Ingen endringer skal gjøres i produksjonsnettet før S6 har 
 \endgroup
 
 \subsection{Designkrav}
-Tabell \ref{tab:designkrav} knytter avdekkede svakheter og driftsbehov til prioriterte krav. Krav med størst betydning for sikkerhet og operativ funksjon har prioritet H; støttende forvaltningskrav har prioritet M. Prioriteringen følger F1--F6.
+Tabell \ref{tab:designkrav} knytter avdekkede svakheter og driftsbehov til prioriterte krav. Krav med størst betydning for sikkerhet og operativ funksjon har prioritet H, mens støttende forvaltningskrav har prioritet M. Prioriteringen følger F1--F6.
 
 \begingroup
 \small
@@ -238,11 +238,11 @@ QoS prioriterer operative tjenester ved WAN-belastning (K6, F2). Generatoren kla
 Operative tjenester og overvåkning prioriteres over velferds- og Internett-trafikk, der redusert ytelse har mindre operativ konsekvens.
 
 \subsection{Fysisk design}
-Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas der det er mulig (K6). Fysisk sikring og kontroll med nettverksuttak må håndteres i tillegg (K7).
+Figur \ref{fig:physical-design} viser den fysiske oppkoblingen. Løsningen bygger på eksisterende utstyr i tråd med F3, samtidig som redundans og tilgjengelighet ivaretas innad i siten (K6). Fysisk sikring og kontroll med nettverksuttak håndteres etter annbefalining i figur \ref{fig:floorplan}, eller etter eget ønske. (K7).
 
-Hver lokasjon består av en lokasjonsruter, en distribusjonssvitsj og en eller flere aksessvitsjer. De lokale VLAN-ene transporteres frem til ruteren, som fungerer som lag-3-grense mellom tjenestenettene og DMVPN-overlayene.
+Hver lokasjon består av en lokasjonsruter, en distribusjonssvitsj og en eller flere aksessvitsjer. De lokale VLAN-ene transporterer data frem til ruteren, som fungerer som lag-3-grense mellom tjenestenettene og DMVPN-overlayene.
 
-Der portkapasiteten tillater det, brukes EtherChannel mellom svitsjene. Det gir redundans dersom en fysisk lenke faller ut og gjør det mulig å utnytte kapasiteten i flere parallelle forbindelser.
+Det benyttes EtherChannel mellom svitsjene, noe som gir redundans dersom en fysisk lenke faller ut, og gjør det mulig å utnytte kapasiteten i flere parallelle forbindelser.
 
 \begin{figure}[H]
     \centering
