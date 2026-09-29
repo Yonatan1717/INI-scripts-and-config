@@ -81,8 +81,8 @@ Trafikken fortsatte ved enkeltbrudd. Fullt brudd ble oppdaget, og kanalen kom ti
 
 08 & Spanning Tree &
 Kontroller root bridge og STP-status for Port-channel på hvert site. &
-SW1 har planlagt root-rolle, og kanalen behandles som én logisk forbindelse. &
-SW1 hadde planlagt root-rolle. STP behandlet Port-channel som én forbindelse. & Bestått \\
+SW1 har planlagt root-rolle, og kanalen behandles som n logisk forbindelse. &
+SW1 hadde planlagt root-rolle. STP behandlet Port-channel som n forbindelse. & Bestått \\
 
 09 & STP-beskyttelse &
 Test BPDU Guard på klientport, Root Guard på downlink og Loop Guard ved bortfall av forventede BPDU-er. &
@@ -91,7 +91,7 @@ Beskyttelsene reagerte som forventet i alle tre testene. & Bestått \\
 
 10 & Port security &
 Lær en MAC-adresse og test deretter en til på samme port. &
-Maksimalt én tillates. Overskytende trafikk stoppes med \texttt{restrict}. &
+Maksimalt n tillates. Overskytende trafikk stoppes med \texttt{restrict}. &
 Første MAC-adresse fungerte. Trafikk fra den neste ble begrenset. & Bestått \\
 
 11 & DHCP Snooping &
@@ -251,12 +251,12 @@ Utrulling fulgte planen. Sikkerhetskopiering og gjenoppretting fungerte som forv
 \section{Datagrunnlag for konfigurasjonsgeneratoren}
 \label{sec:vedlegg-excel}
 
-Arbeidsboken \texttt{demo\_no\_mpls.xlsx} inneholder arkene
+Arbeidsboken \texttt{demo.xlsx} inneholder arkene
 \texttt{Site 1 (HUB)}, \texttt{Site 2}, \texttt{Site 3} og
 \texttt{FLOW\_POLICY}. Lokasjonsarkene beskriver rutere, tjenestenett,
 tunneler og svitsjer. Trafikkpolicyen er samlet i et eget ark.
 Tabellene nedenfor viser strukturen og utvalgte verdier fra hub-lokasjonen.
-Felles struktur beskrives én gang; de øvrige lokasjonene har egne adresser
+Felles struktur beskrives n gang; de øvrige lokasjonene har egne adresser
 og enhetsparametere.
 
 \begin{table}[H]
@@ -435,6 +435,101 @@ Alle tunneladressene i eksemplet bruker /24-maske. NHRP-ID gjengir feltet
     \rowcolors{1}{}{}
 \end{table}
 
+\begin{table}[H]
+    \centering
+    \caption{Enhetsparametere for svitsjen på lokasjon 1.}
+    \label{tab:excel-svitsj-enhet}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{4.4cm}
+        >{\raggedright\arraybackslash}p{4.6cm}
+        >{\raggedright\arraybackslash}p{5.2cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Felt} &
+        \color{white}\textbf{Eksempelverdi} &
+        \color{white}\textbf{Betydning} \\
+        \midrule
+
+        \texttt{MGMT ip} &
+        \texttt{10.1.10.2} &
+        Svitsjens management-adresse. \\
+
+        \texttt{gateway} &
+        \texttt{10.1.10.1} &
+        Gateway i management-nettet. \\
+
+        \texttt{mask} &
+        \texttt{255.255.255.0} &
+        Nettverksmaske for management-adressen. \\
+
+        \texttt{num\_ports\_tot} &
+        25 &
+        Totalt antall porter angitt for svitsjen. \\
+
+        \texttt{skiped\_ports} &
+        1 &
+        Antall porter som skal hoppes over ved porttildeling. \\
+
+        \texttt{num\_downlink} &
+        0 &
+        Antall nedlinker angitt for svitsjen. \\
+
+        \texttt{vlan-antall} &
+        \texttt{200.1-20.5-30.5-40.5} &
+        Portfordeling på formatet VLAN.antall, med bindestrek mellom gruppene. \\
+
+        \texttt{intf\_prefix} &
+        \texttt{g0/} &
+        Prefiks for svitsjens grensesnittnavn. \\
+
+        \texttt{num\_port\_ledig} &
+        21 &
+        Antall ledige porter angitt i arbeidsboken. \\
+
+        \texttt{MONITORING ip} &
+        <ERSPAN destination IP> &
+        Felt for IP-adresse til overvåkningsfunksjonen. \\
+
+        \texttt{tacacs\_syntax} &
+        -- &
+        Enhetsspesifikt syntaksvalg for TACACS+. \\
+
+        \texttt{radius\_syntax} &
+        -- &
+        Enhetsspesifikt syntaksvalg for RADIUS. \\
+
+        \texttt{dot1x\_syntax} &
+        -- &
+        Enhetsspesifikt syntaksvalg for IEEE 802.1X. \\
+
+        \texttt{secret\_type} &
+        -- &
+        Valg av type for passordhemmeligheter i konfigurasjonen. \\
+
+        \texttt{trunk\_encapsulation} &
+        -- &
+        Valg for konfigurasjon av trunk-innkapsling. \\
+
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\noindent
+Verdien \texttt{200.1-20.5-30.5-40.5} angir n port i VLAN 200
+og fem porter i hvert av VLAN-ene 20, 30 og 40, syntax er altså:
+\[
+    \texttt{VLAN.antall-VLAN.antall-...}
+\]
+
+Tankestrek i verdikolonnen markerer at feltet er tomt i
+Excel-arket. De tomme feltene arver verdier fra ruterparametrene.
+
 \clearpage
 \subsection*{Trafikkpolicy og vedlikehold av datagrunnlaget}
 
@@ -452,7 +547,7 @@ arket, i samme rekkefølge. Symbolske mål som \texttt{DNS} og
     \setlength{\tabcolsep}{5pt}
     \rowcolors{2}{lightgreen}{white}
     \begin{tabular}{
-        >{\raggedright\arraybackslash}p{2.1cm}
+        >{\raggedright\arraybackslash}p{2.5cm}
         >{\raggedright\arraybackslash}p{3.0cm}
         >{\raggedright\arraybackslash}p{2.3cm}
         >{\raggedright\arraybackslash}p{3.2cm}
@@ -507,7 +602,7 @@ formelreferanser og genererte konfigurasjoner kontrolleres.
 \textbf{Avgrensning.}
 Tabellene dokumenterer verdiene i den vedlagte demonstrasjonsfilen.
 Eksemplet bruker \texttt{SPAN}, og VLAN-/VRF-tabellen inneholder MGMT,
-INET, UNET og PA. \texttt{MONITORING ip} finnes som felt i svitsjtabellen,
+INET, UNET og PA, MONITORING. \texttt{MONITORING ip} finnes som felt i svitsjtabellen,
 men er tomt for hub-svitsjen. Passord, passordhasher og faktiske delte
 nøkler er utelatt eller maskert i vedlegget.
 
