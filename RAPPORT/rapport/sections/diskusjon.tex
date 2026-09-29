@@ -6,7 +6,7 @@ Diskusjonen vurderer designets konsekvenser og begrensninger innenfor F1--F6.
 
 \subsection{Ruting, utstyr og adresseplan}
 
-VRF-Lite og separate DMVPN-overlay gir ende-til-ende segmentering uten at leverandørens lag-3-VPN må rekonfigureres. Rapporterte labresultater støtter at segmentering og ruting fungerte, også ved testede brudd. Phase 3 gir samtidig bedre skalerbarhet enn statiske punkt-til-punkt-tunneler fordi nye spoke-lokasjoner kan legges til uten full mesh-konfigurasjon, mens dataplanet kan etablere direkte spoke-to-spoke-forbindelser.
+VRF-Lite og separate DMVPN-overlay gir ende-til-ende segmentering uten at leverandørens lag-3-VPN må rekonfigureres. Rapporterte labresultater støtter at segmentering og ruting fungerte, også etter gjenoppretting ved testede brudd. Phase 3 gir samtidig bedre skalerbarhet enn statiske punkt-til-punkt-tunneler fordi nye spoke-lokasjoner kan legges til uten full mesh-konfigurasjon, mens dataplanet kan etablere direkte spoke-to-spoke-forbindelser.
 
 Adresseplanen \texttt{10.X.Y.0/24} prioriterer enkel drift fremfor maksimal adresseutnyttelse. /24-nett er større enn nødvendig for flere tjenester, men site og tjeneste kan leses direkte fra adressen, noe som forenkler dokumentasjon og feilsøking.
 
@@ -14,7 +14,7 @@ Bruk av eksisterende Cisco-utstyr reduserer behovet for nyanskaffelser, men gjø
 
 \subsection{Kryptering og sikkerhet}
 
-Sikkerheten er avhengig av at flere lag virker sammen. VRF-er begrenser rutingsdomenene, ACL-er styrer tillatte flyter, og IPsec beskytter overlay der konfidensialitet og integritet kreves. Testingen viste at filtrering og IPsec fungerte etter designet. Krypteringen reduserer samtidig behovet for å stole på underliggende transportinfrastruktur som eFP ikke administrerer.
+Sikkerheten er avhengig av at flere lag virker sammen. VRF-er begrenser rutingsdomenene, VLAN sørger for segmentering, ACL-er styrer tillatte flyter, og IPsec beskytter overlay der konfidensialitet og integritet kreves. Testingen viste at filtrering og IPsec fungerte etter designet. Krypteringen reduserer samtidig behovet for å stole på underliggende transportinfrastruktur som eFP ikke administrerer.
 
 Den viktigste operative risikoen ligger derfor ikke i en enkelt mekanisme, men i feil konfigurasjon av grensene mellom dem. Feil trusted/untrusted-rolle kan for eksempel svekke beskyttelsen på klientporter eller blokkere legitim infrastrukturtrafikk. Standardisert generering reduserer risikoen for slike avvik, men erstatter ikke kontroll av kabling, portroller og generert konfigurasjon.
 
@@ -52,6 +52,6 @@ Konfigurasjonsgeneratoren reduserer personavhengighet, men gjør Excel-grunnlage
 
 \subsection{Test og verifikasjon}
 
-De rapporterte labresultatene støtter hovedfunksjonene, men dokumenterer ikke uten videre kravoppfyllelse i produksjonsnettet. Testmatrisen vedlegges som dokumentasjon på gjennomførte tester, testbetingelser, akseptkriterier og observerte resultater (Vedlegg \ref{sec:vedlegg-testmatrise}).
+De rapporterte labresultatene støtter hovedfunksjonene, men må verifiseres mot produksjonsnettet før implementasjon. Testmatrisen vedlegges som dokumentasjon på gjennomførte tester, testbetingelser, akseptkriterier og observerte resultater (Vedlegg \ref{sec:vedlegg-testmatrise}).
 
-Før produksjonssetting bør det gjennomføres en siste ende-til-ende-verifikasjon av faktisk utstyr og transportforbindelse. Den bør særlig bekrefte ERSPAN eller valgt alternativ speilingsmetode, MTU gjennom GRE/IPsec, oppførsel ved bortfall av sentrale tjenester og at nødvendige tjenesteflyter er representert i \texttt{FLOW\_POLICY}. Dette gir et tydeligere grunnlag for S6 sin aksept av gjenværende operativ risiko.
+Testen før produksjonssetting bør inneholde en siste ende-til-ende-verifikasjon av faktisk utstyr og transportforbindelse. Den bør særlig bekrefte ERSPAN eller valgt alternativ speilingsmetode, MTU gjennom GRE/IPsec, oppførsel ved bortfall av sentrale tjenester og at nødvendige tjenesteflyter er representert i \texttt{FLOW\_POLICY}. Dette gir et tydeligere grunnlag for S6 sin aksept av gjenværende operativ risiko.
