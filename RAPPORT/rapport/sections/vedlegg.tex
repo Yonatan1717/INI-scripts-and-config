@@ -52,12 +52,12 @@ der $P_i$ er klassens prioriteringsvekt. Andelene avrundes først ned til heltal
 01 & VLAN og porter &
 Kontroller portroller mot kablingen og klientenes VLAN-tilhørighet. &
 Porter har riktig rolle, og klienter tilhører riktig VLAN. &
-Portroller og VLAN-tilhørighet stemte med kablingen. & Bestått \\
+Portroller og VLAN-tilhørighet stemte med med forventet resultat. & Bestått \\
 
 02 & VLAN og porter &
-Test klientoppkobling med PortFast og kommunikasjon i samme VLAN, både på samme og mellom ulike svitsjer. &
-Klientportene blir raskt klare, og kommunikasjonen fungerer. &
-Portene ble raskt klare. Kommunikasjon i samme VLAN fungerte. & Bestått \\
+Test klientoppkobling og kommunikasjon i samme VLAN, både på samme og mellom ulike svitsjer. &
+ Kommunikasjonen fungerer både i og mellom VLAN. &
+Kommunikasjon i samme, og mellom VLAN fungerte. & Bestått \\
 
 03 & VLAN og trunk &
 Kontroller tillatte VLAN over Port-channel og rutertrunk, samt native VLAN 999. &
@@ -91,7 +91,7 @@ Beskyttelsene reagerte som forventet i alle tre testene. & Bestått \\
 
 09 & Port security &
 Lær en MAC-adresse og test deretter en til på samme port. &
-Maksimalt n tillates. Overskytende trafikk stoppes med \texttt{restrict}. &
+Maksimalt en tillates. Overskytende trafikk stoppes med \texttt{restrict}. &
 Første MAC-adresse fungerte. Trafikk fra den neste ble begrenset. & Bestått \\
 
 10 & DHCP Snooping &
@@ -217,7 +217,7 @@ Testen ble ikke gjennomført. & Ikke testet \\
 34 & Overvåkingsdekning &
 Test lokal trafikk, trafikk mellom svitsjer og MAN-trafikk, samt teste at alarmsystemet trigges korrekt i Suricata. &
 Trafikken speiles korrekt og trigger alarmsystemet ved treff på signaturer i Suricata. &
-Den gjennomførte kontrollen ga forventet dekning. ERSPAN inngikk ikke i testen. & Bestått \\
+Den gjennomførte kontrollen ga forventet dekning (testen benyttet SPAN). & Bestått \\
 
 35 & QoS &
 Kontroller policyplassering, DSCP-merking, klassifisering gjennom GRE/IPsec og fordeling under belastning. &
