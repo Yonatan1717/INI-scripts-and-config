@@ -74,167 +74,167 @@ Kontroller ISP-port og VLAN-utbredelse på hub. &
 ISP-VLAN når hubruteren, men ikke downstream-svitsjene. &
 ISP-VLAN nådde hubruteren og ble ikke ført til downstream-svitsjene. & Bestått \\
 
-07 & EtherChannel &
+06 & EtherChannel &
 Koble fra ett medlem og deretter hele kanalen. Gjenopprett forbindelsene og mål eventuelt pakketap. &
 Trafikken fortsetter ved enkeltbrudd. Fullt brudd oppdages, og kanalen gjenopprettes. &
 Trafikken fortsatte ved enkeltbrudd. Fullt brudd ble oppdaget, og kanalen kom tilbake. & Bestått \\
 
-08 & Spanning Tree &
+07 & Spanning Tree &
 Kontroller root bridge og STP-status for Port-channel på hvert site. &
 SW1 har planlagt root-rolle, og kanalen behandles som n logisk forbindelse. &
 SW1 hadde planlagt root-rolle. STP behandlet Port-channel som n forbindelse. & Bestått \\
 
-09 & STP-beskyttelse &
+08 & STP-beskyttelse &
 Test BPDU Guard på klientport, Root Guard på downlink og Loop Guard ved bortfall av forventede BPDU-er. &
 Mekanismene hindrer henholdsvis uønskede BPDU-er, root-endring og feilaktig forwarding. &
 Beskyttelsene reagerte som forventet i alle tre testene. & Bestått \\
 
-10 & Port security &
+09 & Port security &
 Lær en MAC-adresse og test deretter en til på samme port. &
 Maksimalt n tillates. Overskytende trafikk stoppes med \texttt{restrict}. &
 Første MAC-adresse fungerte. Trafikk fra den neste ble begrenset. & Bestått \\
 
-11 & DHCP Snooping &
+10 & DHCP Snooping &
 Test legitim DHCP og DHCP-svar fra ikke-betrodd klientport og downstream-forbindelse. &
 Legitim DHCP fungerer og oppretter bindinger. Uautoriserte svar blokkeres. &
 Legitim DHCP opprettet bindinger. Uautoriserte svar ble blokkert. & Bestått \\
 
-12 & DAI og IP Source Guard &
+11 & DAI og IP Source Guard &
 Test gyldig klienttrafikk, feilaktig ARP-kobling og endret kilde-IP. &
 Gyldig trafikk fungerer. Ugyldig ARP og kildeadresse stoppes. &
 Gyldig trafikk fungerte. Ugyldig ARP og endret kilde-IP ble stoppet. & Bestått \\
 
-13 & Omstart av svitsj &
+12 & Omstart av svitsj &
 Start testsvitsj på nytt og kontroller DHCP-bindinger, ARP og klienttilgang. &
 Nødvendige bindinger og nettverkstilgang gjenopprettes. &
 Bindinger, ARP og klienttilgang ble gjenopprettet etter omstart. & Bestått \\
 
-14 & VRF &
+13 & VRF &
 Kontroller adresser, grensesnitt, gateway og loopbacks. Test kommunikasjon mellom isolerte VRF-er. &
 Riktig VRF-tilhørighet og ingen uautorisert kommunikasjon mellom VRF-er. &
 VRF-tilhørigheten stemte. Uautorisert kommunikasjon mellom VRF-er ble ikke oppnådd. & Bestått \\
 
-15 & OSPF og transportnett &
+14 & OSPF og transportnett &
 Kontroller OSPF-naboer, router-ID, ruter og tilgjengelighet til tunnel-loopbacks. &
 Forventede naboer og ruter finnes, og tunnelkildene kan nå hverandre. &
 Forventede naboer og ruter var på plass. Tunnel-loopbacks var tilgjengelige. & Bestått \\
 
-16 & EIGRP &
+15 & EIGRP &
 Kontroller naboer og lærte ruter i hver VRF. &
 Riktige LAN og loopbacks læres over riktig tunnel. &
 Forventede naboer og ruter ble lært i riktig VRF og tunnel. & Bestått \\
 
-17 & Internett og NAT &
+16 & Internett og NAT &
 Kontroller INET-standardrute. Test NAT/PAT fra hub og remote site, samt internettilgang fra øvrige VRF-er. &
 INET får tilgang via hub med fungerende oversettelser og returtrafikk. Øvrige nett blokkeres etter designet. &
 INET-trafikk fungerte via hub med NAT/PAT og returtrafikk. Øvrige nett ble blokkert. & Bestått \\
 
-18 & Ruting ved brudd &
+17 & Ruting ved brudd &
 Bryt transportforbindelsen og gjenopprett den. &
 Naboer og ruter reagerer på bruddet og kommer tilbake. &
 Naboer og ruter reagerte på bruddet og kom tilbake etter gjenoppretting. & Bestått \\
 
-19 & ACL &
+18 & ACL &
 Kontroller ACL-tilknytning, blokkerte forbindelser og nødvendige infrastrukturtjenester med filtrering aktiv. &
 Riktig ACL brukes. Uønsket trafikk stoppes, mens nødvendige tjenester og svartrafikk fungerer. &
 Riktig ACL var aktiv. Uønsket trafikk ble stoppet, og nødvendige tjenester fungerte. & Bestått \\
 
-21 & DMVPN &
+19 & DMVPN &
 Kontroller NHRP, valgt DMVPN-fase og direkte forbindelse mellom spoker. &
 Riktig registrering og faseoppsett. Spoke-til-spoke fungerer som planlagt. &
 NHRP og faseoppsett stemte. Spoke-til-spoke-kommunikasjon fungerte. & Bestått \\
 
-22 & IPsec og tunneltrafikk &
+20 & IPsec og tunneltrafikk &
 Test trafikk i hver VRF. Kontroller IKE/IPsec-profiler, sikkerhetsassosiasjoner, tellere og pakkefangst. &
 Tillatt trafikk fungerer, og tunneler med krypteringskrav bruker riktig beskyttelse. &
 Tillatt trafikk fungerte. Profiler, sikkerhetsassosiasjoner og tellere viste forventet beskyttelse. & Bestått \\
 
-23 & DHCP og DNS &
+21 & DHCP og DNS &
 Hent og forny adresse i hvert klientnett. Kontroller reserverte adresser, DNS-utdeling og navneoppslag fra INET. &
 Riktig adresse, maske og gateway tildeles. Reserverte adresser holdes utenfor. INET får konfigurert DNS og fungerende oppslag. &
 Klientene fikk riktige nettverksinnstillinger. Reservasjoner og DNS-oppslag fungerte. & Bestått \\
 
-24 & NTP &
+22 & NTP &
 Kontroller hubens klokke og tidsreferanse, synkronisering til rutere og svitsjer, samt bortfall og gjenoppretting av tidskilden. &
 Hele kjeden synkroniseres. Bortfall oppdages, og synkronisering gjenopprettes. &
 Enhetene ble synkronisert. Bortfall ble oppdaget, og synkronisering kom tilbake. & Bestått \\
 
-25 & Administrasjon &
+23 & Administrasjon &
 Test lokal og ekstern SSH, avvisning fra øvrige nett, Telnet, konsollinnlogging og tidsavbrudd. &
 Bare godkjente kilder får SSH-tilgang. Telnet avvises, konsoll krever innlogging, og tidsavbrudd fungerer. &
 Godkjent SSH fungerte. Øvrige kilder og Telnet ble avvist; konsoll og tidsavbrudd fungerte. & Bestått \\
 
-26 & TACACS+ &
+24 & TACACS+ &
 Test gyldig og ugyldig konto, ulike rettigheter, kildeadresser og returvei. &
 Serveren gjenkjenner enhetene og gir riktig innlogging og tilgangsnivå. &
 Gyldige kontoer fikk riktig tilgang. Ugyldige kontoer ble avvist. & Bestått \\
 
-27 & TACACS+ accounting &
+25 & TACACS+ accounting &
 Logg inn og ut, og utfør kommando på nivå 15. &
 Sesjon og relevante kommandoer registreres på serveren. &
 Innlogging, utlogging og relevante kommandoer ble registrert. & Bestått \\
 
-28 & TACACS+ reservetilgang &
+26 & TACACS+ reservetilgang &
 Test lokal konto ved serverbortfall og ved eksplisitt avvisning fra tilgjengelig server. &
 Lokal reservetilgang fungerer ved bortfall, men omgår ikke en eksplisitt avvisning. &
 Lokal konto fungerte ved bortfall, men ga ikke tilgang ved eksplisitt avvisning. & Bestått \\
 
-29 & 802.1X og RADIUS &
+27 & 802.1X og RADIUS &
 Kontroller valgte klientporter og RADIUS-klientadresser. Test godkjent klient, feil legitimasjon og klient uten 802.1X. &
 Riktige porter krever autentisering. Serveren gjenkjenner svitsjene, og bare godkjente klienter får tilgang. &
 Godkjente klienter fikk tilgang. Feil legitimasjon og klient uten 802.1X ble avvist. & Bestått \\
 
-30 & RADIUS-bortfall &
+28 & RADIUS-bortfall &
 Gjør serveren utilgjengelig og test nye og eksisterende sesjoner. &
 Ingen utilsiktet ny tilgang gis. Eksisterende sesjoners oppførsel dokumenteres. &
 Ingen utilsiktet ny tilgang ble gitt. Eksisterende sesjoner oppførte seg som forventet. & Bestått \\
 
-31 & 802.1X og portsikkerhet &
+29 & 802.1X og portsikkerhet &
 Koble klient til og fra med øvrige sikkerhetsmekanismer aktive. Kontroller accounting. &
 Godkjent klient fungerer med snooping, DAI, Source Guard og port security. Start/stopp registreres. &
 Godkjent klient fungerte med sikkerhetsmekanismene aktive. Start og stopp ble registrert. & Bestått \\
 
-32 & Logging &
+30 & Logging &
 Utløs kjente drifts- og sikkerhetshendelser og kontroller lokale logger og sentral syslog. &
 Forventede hendelser registreres med riktig kilde og tidspunkt. &
 Testhendelsene ble registrert lokalt og sentralt med riktig kilde og tidspunkt. & Bestått \\
 
-33 & SNMPv3 &
+31 & SNMPv3 &
 Utfør \texttt{snmpwalk}. &
 Ønskede data returneres. &
 \texttt{snmpwalk} returnerte forventede data. & Bestått \\
 
-34 & Trafikkspeiling &
+32 & Trafikkspeiling &
 Kontroller speilingsmodus, kilder og sensorport. Send testtrafikk gjennom lokal SPAN. &
 Forventet trafikk når riktig sensorport. &
 Lokal SPAN leverte forventet testtrafikk til riktig sensorport. & Bestått \\
 
-35 & ERSPAN &
+33 & ERSPAN &
 Kontroller at speilet trafikk når fjernsensoren via ERSPAN. &
 Forventet trafikk mottas på fjernsensoren. &
 Testen ble ikke gjennomført. & Ikke testet \\
 
-36 & Overvåkingsdekning &
+34 & Overvåkingsdekning &
 Test lokal trafikk, trafikk mellom svitsjer og MAN-trafikk, samt teste at alarmsystemet trigges korrekt i Suricata. &
 Trafikken speiles korrekt og trigger alarmsystemet ved treff på signaturer i Suricata. &
 Den gjennomførte kontrollen ga forventet dekning. ERSPAN inngikk ikke i testen. & Bestått \\
 
-38 & QoS &
+35 & QoS &
 Kontroller policyplassering, DSCP-merking, klassifisering gjennom GRE/IPsec og fordeling under belastning. &
 Trafikken merkes og klassifiseres riktig. Båndbreddefordelingen følger konfigurerte andeler. &
 Merking, klassifisering og båndbreddefordeling fulgte konfigurasjonen. & Bestått \\
 
-39 & Konfigurasjonsgenerator &
+36 & Konfigurasjonsgenerator &
 Generer fra gyldig Excel-grunnlag og test ugyldige verdier, manglende felt og konflikter. &
 Utdata samsvarer med designet. Ugyldig inndata avvises tydelig. &
 Gyldig grunnlag ga forventet konfigurasjon. Ugyldig inndata ble avvist. & Bestått \\
 
-40 & IOS-kompatibilitet &
+37 & IOS-kompatibilitet &
 Last generert konfigurasjon på testplattformen og kontroller avviste kommandoer. &
 Valgt syntaks godtas, og nødvendige funksjoner blir konfigurert. &
 Konfigurasjonen ble godtatt, og nødvendige funksjoner ble konfigurert. & Bestått \\
 
-41 & Utrulling, sikkerhetskopi og gjenoppretting &
+38 & Utrulling, sikkerhetskopi og gjenoppretting &
 Gjennomgå utrulling, sikkerhetskopiering og gjenoppretting. &
 Utrulling følger planen. Sikkerhetskopier tas i fastsatte intervaller, og systemet kan gjenopprettes til ønsket stabil tilstand. &
 Utrulling fulgte planen. Sikkerhetskopiering og gjenoppretting fungerte som forventet. & Bestått \\
