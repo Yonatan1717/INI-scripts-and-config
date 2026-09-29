@@ -66,3 +66,10 @@
 
 % --- Bibliografi-fil ---
 \addbibresource{referanser.bib}
+
+% --- Dynamic Word Count ---
+\newcommand{\wordcount}{%
+    \IfFileExists{wordcount.txt}
+        {\input{wordcount.txt}}
+        {--}%
+}

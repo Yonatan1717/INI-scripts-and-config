@@ -11,3 +11,4 @@ test/*
 **/ansibleB*/*
 **/ansibleC*/*
 **/init_config_swi*/*
+**/wordcount.txt
