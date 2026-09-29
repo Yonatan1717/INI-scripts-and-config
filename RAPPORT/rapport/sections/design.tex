@@ -13,16 +13,19 @@ Stabssjefen fastsatte følgende rammebetingelser i samråd med S6:
 \begingroup
 \small
 \setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.18}
+\renewcommand{\arraystretch}{1.0}
 \captionsetup{justification=centering,singlelinecheck=false}
-\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.08\linewidth} >{\raggedright\arraybackslash}p{0.25\linewidth} >{\raggedright\arraybackslash}p{0.60\linewidth}@{}}
+\rowcolors{2}{lightgreen}{white}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.08\linewidth} >{\raggedright\arraybackslash}p{0.25\linewidth} >{\raggedright\arraybackslash}p{0.60\linewidth}}
 \caption{Rammebetingelser for rekonfigurasjonen.}\label{tab:rammebetingelser}\\
 \toprule
-\textbf{ID} & \textbf{Rammebetingelse} & \textbf{Beskrivelse} \\
+\rowcolor{tablegreen}
+\color{white}\textbf{ID} & \color{white}\textbf{Rammebetingelse} & \color{white}\textbf{Beskrivelse} \\
 \midrule
 \endfirsthead
 \toprule
-\textbf{ID} & \textbf{Rammebetingelse} & \textbf{Beskrivelse} \\
+\rowcolor{tablegreen}
+\color{white}\textbf{ID} & \color{white}\textbf{Rammebetingelse} & \color{white}\textbf{Beskrivelse} \\
 \midrule
 \endhead
 \midrule
@@ -42,6 +45,7 @@ F5 & Dokumentasjon & Nettverket skal dokumenteres for nåværende og fremtidige 
 \addlinespace
 F6 & Godkjenning & Ingen endringer skal gjøres i produksjonsnettet før S6 har akseptert den operative risikoen ved endringene. \\
 \end{longtable}
+\rowcolors{1}{}{}
 \endgroup
 
 \subsection{Designkrav}
@@ -50,16 +54,19 @@ Tabell \ref{tab:designkrav} knytter avdekkede svakheter og driftsbehov til prior
 \begingroup
 \small
 \setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.18}
+\renewcommand{\arraystretch}{1.0}
 \captionsetup{justification=centering,singlelinecheck=false}
-\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.055\linewidth} >{\raggedright\arraybackslash}p{0.48\linewidth} >{\raggedright\arraybackslash}p{0.30\linewidth} >{\centering\arraybackslash}p{0.065\linewidth}@{}}
+\rowcolors{2}{lightgreen}{white}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.055\linewidth} >{\raggedright\arraybackslash}p{0.48\linewidth} >{\raggedright\arraybackslash}p{0.30\linewidth} >{\centering\arraybackslash}p{0.065\linewidth}}
 \caption{Prioriterte designkrav og grunnlaget for dem.}\label{tab:designkrav}\\
 \toprule
-\textbf{ID} & \textbf{Krav} & \textbf{Grunnlag} & \textbf{Pri.} \\
+\rowcolor{tablegreen}
+\color{white}\textbf{ID} & \color{white}\textbf{Krav} & \color{white}\textbf{Grunnlag} & \color{white}\textbf{Pri.} \\
 \midrule
 \endfirsthead
 \toprule
-\textbf{ID} & \textbf{Krav} & \textbf{Grunnlag} & \textbf{Pri.} \\
+\rowcolor{tablegreen}
+\color{white}\textbf{ID} & \color{white}\textbf{Krav} & \color{white}\textbf{Grunnlag} & \color{white}\textbf{Pri.} \\
 \midrule
 \endhead
 \midrule
@@ -83,6 +90,7 @@ K7 & Fysisk plassering, bruk og driftsansvar skal redusere risikoen fra ubeskytt
 \addlinespace
 K8 & Konfigurasjoner skal dokumenteres, kontrolleres og kunne gjenopprettes til en kjent tilstand. & Rammebetingelsene F1 og F5. Behov for stabil drift, gjenoppretting og kontinuitet ved HO/TO. & M \\
 \end{longtable}
+\rowcolors{1}{}{}
 \endgroup
 
 Krav-ID-ene gir sporbarhet mellom behov, design og verifikasjon. For K6 må tjenestespesifikke akseptkriterier avklares før belastnings- og feiltester kan dokumentere kravoppfyllelse.

@@ -244,9 +244,268 @@ Utrulling fulgte planen. Sikkerhetskopiering og gjenoppretting fungerte som forv
 \end{longtable}
 \rowcolors{1}{}{}i rapportmappen som ble revidert. Sett inn faktisk dokumentasjon med kobling til K1--K8, testbetingelser, akseptkriterier, observerte resultater og avvik. Påstander om gjennomførte tester i hovedteksten må kontrolleres mot denne dokumentasjonen.
 
+% Krever: array, booktabs, float og \usepackage[table]{xcolor}.
+% Fargene tablegreen og lightgreen er definert i den eksisterende rapporten.
+% Erstatt den foreløpige Excel-delen i vedlegget med denne filen.
+% Eksemplene er hentet fra demo_no_mpls.xlsx, ark Site 1 (HUB) og FLOW_POLICY.
+
 \section{Datagrunnlag for konfigurasjonsgeneratoren}
 \label{sec:vedlegg-excel}
-\textbf{Må ferdigstilles før innlevering.} Sett inn den planlagte oversikten over Excel-arbeidsbokens tabeller, felter og betingede parametere. Det opprinnelige utkastet henviste til dette vedlegget, men inneholdt ikke selve oversikten.
+
+Arbeidsboken \texttt{demo\_no\_mpls.xlsx} inneholder arkene
+\texttt{Site 1 (HUB)}, \texttt{Site 2}, \texttt{Site 3} og
+\texttt{FLOW\_POLICY}. Lokasjonsarkene beskriver rutere, tjenestenett,
+tunneler og svitsjer. Trafikkpolicyen er samlet i et eget ark.
+Tabellene nedenfor viser strukturen og utvalgte verdier fra hub-lokasjonen.
+Felles struktur beskrives én gang; de øvrige lokasjonene har egne adresser
+og enhetsparametere.
+
+\begin{table}[H]
+    \centering
+    \caption{Oppbygning av Excel-grunnlaget.}
+    \label{tab:excel-struktur}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{3.2cm}
+        >{\raggedright\arraybackslash}p{11.6cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Del} &
+        \color{white}\textbf{Innhold og formål} \\
+        \midrule
+        Ruterparametere &
+        Site-ID, grensesnittprefiks, administrasjon, serveradresser og syntaksvalg for lokasjonsruteren. \\
+        VLAN-/VRF-plan &
+        Tjenestenett, VLAN, nettadresse, gateway, adresseområde, reserverte adresser og QoS-vekting. \\
+        Loopback-plan &
+        Tilordning av VRF, loopback-nummer og IP-adresse. \\
+        DMVPN-plan &
+        Tunnel-ID, VRF, tunneladresse, kilde, GRE-modus, NHRP-ID og valg av IPsec. \\
+        Felles svitsjvalg &
+        Administrasjonsparametere, EtherChannel, speilingsmodus og VLAN som skal bruke 802.1X. \\
+        Svitsjparametere &
+        Management-adressering, portantall, nedlinker, VLAN-fordeling og eventuelle syntaksvalg per svitsj. \\
+        \texttt{FLOW\_POLICY} &
+        Regler med kilde, destinasjon, protokoll, destinasjonsport og handling som grunnlag for ACL-generering. \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \caption{Utvalgte ruterparametere fra arket Site 1 (HUB).}
+    \label{tab:excel-ruterparametere}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{4.2cm}
+        >{\raggedright\arraybackslash}p{2.8cm}
+        >{\raggedright\arraybackslash}p{7.4cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Felt} &
+        \color{white}\textbf{Eksempelverdi} &
+        \color{white}\textbf{Betydning} \\
+        \midrule
+        \texttt{site} & 1 & Lokasjonsidentifikator som også brukes i adresseformler. \\
+        \texttt{intf\_prefix} & \texttt{g0/} & Prefiks for ruterens grensesnittnavn. \\
+        \texttt{dmvpn\_phase} & 3 & Valgt DMVPN-fase i hub-arket. \\
+        \texttt{ike\_version} & \texttt{IKEV2} & Valgt IKE-versjon. \\
+        \texttt{eigrp\_syntax} & \texttt{NAMED} & Syntaksvariant for EIGRP-konfigurasjon. \\
+        \texttt{tacacs\_server\_ip} & \texttt{10.1.10.10} & Adresse til sentral TACACS+-tjeneste. \\
+        \texttt{syslog\_server\_ip} & \texttt{10.1.10.10} & Adresse til sentral loggtjeneste. \\
+        \texttt{snmpv3\_enabled} & \texttt{TRUE} & Valg om SNMPv3 skal aktiveres. \\
+        \texttt{tacacs\_key} & Maskert & Delt hemmelighet for TACACS+. \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\clearpage
+\subsection*{Eksempler på adressering, tunneler og svitsjvalg}
+
+Adressefeltene under gjengir de lagrede formelresultatene i arbeidsboken.
+Alle fire tjenestenettene i eksemplet har masken \texttt{255.255.255.0}.
+
+\begin{table}[H]
+    \centering
+    \caption{Utdrag av VLAN-/VRF-planen for lokasjon 1.}
+    \label{tab:excel-vlanplan}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{l c l l c c c}
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{VRF} &
+        \color{white}\textbf{VLAN} &
+        \color{white}\textbf{Nettadresse} &
+        \color{white}\textbf{Gateway} &
+        \color{white}\textbf{Res.} &
+        \color{white}\textbf{AF-kode} &
+        \color{white}\textbf{Vekt} \\
+        \midrule
+        MGMT & 10 & 10.1.10.0 & 10.1.10.1 & 40 & 21 & 5 \\
+        INET & 20 & 10.1.20.0 & 10.1.20.1 & 40 & 11 & 2 \\
+        UNET & 30 & 10.1.30.0 & 10.1.30.1 & 40 & 42 & 7 \\
+        PA   & 40 & 10.1.40.0 & 10.1.40.1 & 40 & 41 & 10 \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\noindent
+\textbf{Res.} gjengir \texttt{antall-res}, antall reserverte adresser.
+\textbf{AF-kode} gjengir \texttt{pri-afxx}; eksempelvis tilsvarer 21
+merkingen AF21. \textbf{Vekt} gjengir \texttt{pri-1-10} og brukes som
+prioriteringsvekt ved fordeling av båndbredde.
+
+\begin{table}[H]
+    \centering
+    \caption{Utvalgte DMVPN-felt fra hub-arket.}
+    \label{tab:excel-dmvpn}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{l l l l c c}
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Tunnel} &
+        \color{white}\textbf{VRF} &
+        \color{white}\textbf{IP-adresse} &
+        \color{white}\textbf{GRE-modus} &
+        \color{white}\textbf{NHRP-ID} &
+        \color{white}\textbf{IPsec} \\
+        \midrule
+        tunnel 10 & MGMT & 172.16.10.1 & multipoint & 10 & Ja \\
+        tunnel 20 & INET & 172.16.20.1 & multipoint & 20 & Nei \\
+        tunnel 30 & UNET & 172.16.30.1 & multipoint & 30 & Ja \\
+        tunnel 40 & PA   & 172.16.40.1 & multipoint & 40 & Ja \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\noindent
+Alle tunneladressene i eksemplet bruker /24-maske. NHRP-ID gjengir feltet
+\texttt{network-id}. Arbeidsboken har også feltene \texttt{source},
+\texttt{destination} og \texttt{ipsec key}, som er utelatt fra utsnittet.
+
+\begin{table}[H]
+    \centering
+    \caption{Utvalgte svitsjparametere for lokasjon 1.}
+    \label{tab:excel-svitsj}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{3.6cm}
+        >{\raggedright\arraybackslash}p{2.8cm}
+        >{\raggedright\arraybackslash}p{8.0cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Felt} &
+        \color{white}\textbf{Eksempelverdi} &
+        \color{white}\textbf{Betydning} \\
+        \midrule
+        \texttt{span\_mode} & \texttt{SPAN} & Felles valg av speilingsmodus på lokasjonen. \\
+        \texttt{dot1x\_vlans} & \texttt{20,30,40} & VLAN valgt for 802.1X på klientporter. \\
+        \texttt{SW} & 1 & Svitsjnummer innenfor lokasjonen. \\
+        \texttt{MGMT Vlan} & 10 & Management-VLAN for svitsjen. \\
+        \texttt{MGMT ip} & \texttt{10.1.10.2} & Svitsjens management-adresse. \\
+        \texttt{gateway} & \texttt{10.1.10.1} & Gateway i management-nettet. \\
+        \texttt{intf\_prefix} & \texttt{g0/} & Prefiks for svitsjens grensesnittnavn. \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\clearpage
+\subsection*{Trafikkpolicy og vedlikehold av datagrunnlaget}
+
+\texttt{FLOW\_POLICY} beskriver hvilke trafikkflyter generatoren skal
+oversette til ACL-regler. Tabellen viser alle regelradene i det vedlagte
+arket, i samme rekkefølge. Symbolske mål som \texttt{DNS} og
+\texttt{DHCP} tolkes av generatoren.
+
+\begin{table}[H]
+    \centering
+    \caption{Trafikkreglene i arket FLOW\_POLICY.}
+    \label{tab:excel-flow-policy}
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \setlength{\tabcolsep}{5pt}
+    \rowcolors{2}{lightgreen}{white}
+    \begin{tabular}{
+        >{\raggedright\arraybackslash}p{2.1cm}
+        >{\raggedright\arraybackslash}p{3.0cm}
+        >{\raggedright\arraybackslash}p{2.3cm}
+        >{\raggedright\arraybackslash}p{3.2cm}
+        >{\raggedright\arraybackslash}p{3.1cm}
+    }
+        \toprule
+        \rowcolor{tablegreen}
+        \color{white}\textbf{Kilde} &
+        \color{white}\textbf{Destinasjon} &
+        \color{white}\textbf{Protokoll} &
+        \color{white}\textbf{Destinasjonsport} &
+        \color{white}\textbf{Handling} \\
+        \midrule
+        MGMT & DHCP     & udp & 67  & permit \\
+        MGMT & MGMT     & ip  & any & permit \\
+        INET & DHCP     & udp & 67  & permit \\
+        INET & INET     & ip  & any & deny \\
+        INET & DNS      & udp & 53  & permit \\
+        INET & DNS      & tcp & 53  & permit \\
+        INET & INTERNET & tcp & 80  & permit \\
+        INET & INTERNET & tcp & 443 & permit \\
+        UNET & DHCP     & udp & 67  & permit \\
+        UNET & UNET     & ip  & any & permit \\
+        PA   & DHCP     & udp & 67  & permit \\
+        PA   & PA       & ip  & any & permit \\
+        \bottomrule
+    \end{tabular}
+    \rowcolors{1}{}{}
+\end{table}
+
+\noindent
+Kolonnene tilsvarer \texttt{source}, \texttt{destination},
+\texttt{protocol}, \texttt{destination\_port} og \texttt{action}.
+Ifølge forklaringene i arbeidsboken avsluttes hver genererte ACL med
+\texttt{deny ip any any log}. Bare kildesoner som finnes i policyen får
+en slik ingress-ACL. Målet \texttt{INTERNET} oversettes til
+\texttt{any}; avgrensning mot interne mål krever derfor eksplisitte
+regler før brede tillatelser.
+
+\medskip
+\noindent
+\textbf{Manuelle og beregnede felt.}
+Site-ID, VLAN-nummer, syntaksvalg og tjenestevalg angis som parametere.
+Nettadresser og gateway-adresser beregnes med formler fra blant annet
+site-ID og VLAN. Flere sentrale serveradresser og nøkler i spoke-arkene
+hentes gjennom referanser til hub-arket. Ved endringer må både
+formelreferanser og genererte konfigurasjoner kontrolleres.
+
+\medskip
+\noindent
+\textbf{Avgrensning.}
+Tabellene dokumenterer verdiene i den vedlagte demonstrasjonsfilen.
+Eksemplet bruker \texttt{SPAN}, og VLAN-/VRF-tabellen inneholder MGMT,
+INET, UNET og PA. \texttt{MONITORING ip} finnes som felt i svitsjtabellen,
+men er tomt for hub-svitsjen. Passord, passordhasher og faktiske delte
+nøkler er utelatt eller maskert i vedlegget.
 
 \section{Security onion konfigurasjon}
 \label{sec:vedlegg-seconi}
